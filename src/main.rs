@@ -1,5 +1,7 @@
 use std::path::Path;
+use std::str;
 
+use chrono::{Local, DateTime, TimeZone};
 use git2::{Diff, DiffFormat, Repository,};
 
 use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent, new_debouncer, notify::{RecursiveMode, Result}};
@@ -26,32 +28,55 @@ fn try_commit(r: &Repository) {
     };
 
     let wipbranchname = String::from("wip/") + &headbranchname;
-    let headoid = headcommit.id();
+    let headid = headcommit.id();
 
     // Does the wip branch already exist? If so, is HEAD reachable from it? If not, create it and
     // point it at HEAD. otherwise, leave it be.
 
     // Make the wip branch if it doesn't exist
-    let (wipbranch, wipcommit) = if let Ok(branch) = r.find_branch(&wipbranchname, git2::BranchType::Local) {
+    let (wipbranch, wipcommitid) = if let Ok(branch) = r.find_branch(&wipbranchname, git2::BranchType::Local) {
         if let Ok(commit) = branch.get().peel_to_commit() {
-            (branch, commit)
+            (branch, commit.id())
         } else {
-            (r.branch(&wipbranchname, &headcommit, true).unwrap(), headcommit)
+            (r.branch(&wipbranchname, &headcommit, true).unwrap(), headid)
         }
     } else {
-        (r.branch(&wipbranchname, &headcommit, true).unwrap(), headcommit)
+        (r.branch(&wipbranchname, &headcommit, true).unwrap(), headid)
     };
 
-    let wipoid = wipcommit.id();
-
-    if let Ok(true) = (r.graph_descendant_of(wipoid, headoid).map(|desc| desc || (headoid == wipoid))) {
-        eprintln!("Is an ancestor");
+    let wipbranch = if let Ok(true) = (r.graph_descendant_of(wipcommitid, headid).map(|desc| desc || (headid == wipcommitid))) {
+        // Is an ancestor; we just want to make a new commit on the same branch
+        wipbranch
     } else {
-        eprintln!("Not an ancestor");
-    }
+        // Not an ancestor; we want to reset the branch to point at the current commit
+        r.branch(&wipbranchname, &headcommit, true).unwrap()
+    };
 
     // 2. Is there a diff?
-    eprintln!("");
+    let mut diff_options = git2::DiffOptions::new();
+    diff_options.include_untracked(true).recurse_untracked_dirs(true);
+    let mut diff_lines = vec![String::from("\n\n")];
+    if let Ok(diff) = r.diff_tree_to_workdir(Some(&wipbranch.into_reference().peel_to_tree().unwrap()), Some(&mut diff_options)) {
+        diff.print(git2::DiffFormat::Patch, |_, _, l| {
+            let line = if ['+', '-', ' '].contains(&l.origin()) {
+                format!("{}{}", l.origin(), str::from_utf8(l.content()).unwrap())
+            } else {
+                format!("{}", str::from_utf8(l.content()).unwrap())
+            };
+            diff_lines.push(line);
+            true
+        }).unwrap();
+    }
+    let config = r.config().unwrap();
+    let name = config.get_string("user.name").unwrap();
+    let email = config.get_string("user.email").unwrap();
+    let now = Local::now();
+    println!("Author: {} <{}>", name, email);
+    println!("Date:   {}", now.format("%a %b %-d %H:%M:%S %Y %z"));
+    print!("\n\n");
+    println!("COMMIT MESSAGE HERE");
+    print!("{}", diff_lines.join(""));
+
     //let diff = r.diff_tree_to_workdir().unwrap();
 
     // 3. Ask GPT-3 for commit message based on the diff
