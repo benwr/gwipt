@@ -123,8 +123,6 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
             &[&existing_wip_commit, &head_commit],
         )?;
         info!("{}: {}", new_commit_id, message);
-        debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
-        repo.branch(&wip_branch_name, &head_commit, true)?;
     }
     Ok(wip_branch_name)
 }
