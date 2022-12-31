@@ -23,7 +23,7 @@ descriptive commit message. Say you're on branch `A`; then all your changes
 can explore them whenever you want.
 
 You can see a few testing examples in the
-[commit history](https://github.com/benwr/gwipt/commits/main) branch of
+[wip/main](https://github.com/benwr/gwipt/commits/wip/main) branch of
 this repository. This is alpha-quality software, but I'm pleased enough with
 the results that I'm already using it for my personal projects.
 ## Installation
