@@ -1,13 +1,8 @@
-use std::path::Path;
-use std::str;
-
-use chrono::{Local, DateTime, TimeZone};
-use git2::{Diff, DiffFormat, Repository,};
-use regex::Regex;
-use reqwest::blocking::Client;
+use git2::Repository;
 use serde::{Deserialize, Serialize};
-
-use notify_debouncer_mini::{DebounceEventResult, DebouncedEvent, new_debouncer, notify::{RecursiveMode, Result}};
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+use tracing::{debug, error, info};
 
 #[derive(Debug, Serialize)]
 struct OpenAiRequest {
@@ -24,34 +19,44 @@ struct OpenAiRequest {
 #[derive(Debug, Deserialize)]
 struct ResponseChoice {
     text: String,
-    index: usize,
-    finish_reason: String,
+    // index: usize,
+    // finish_reason: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct Usage {
-    completion_tokens: usize,
-    total_tokens: usize,
+    // completion_tokens: usize,
+    // total_tokens: usize,
 }
 #[derive(Debug, Deserialize)]
 struct OpenAiResponse {
-    id: String,
-    object: String,
-    created: usize,
-    model: String,
+    // id: String,
+    // object: String,
+    // created: usize,
+    // model: String,
     choices: Vec<ResponseChoice>,
-    usage: Usage,
+    // usage: Usage,
 }
 
-fn get_commit_message(name: String, email: String, diff: String) -> String {
-    let now = Local::now();
-    let prefix = format!("Author: {} <{}>\nDate:   {}", name, email, now.format("%a %b %-d %H:%M:%S %Y %z"));
-    let key = std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable must be set");
-    let client = Client::new();
+fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Result<String> {
+    let now = chrono::Local::now();
+    let prefix = format!(
+        "Author: {} <{}>\nDate:   {}",
+        name,
+        email,
+        now.format("%a %b %-d %H:%M:%S %Y %z")
+    );
+    let key =
+        std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable must be set");
+    let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
     let request = OpenAiRequest {
         model: "text-davinci-003".to_string(),
         prompt: prefix,
+        // The API limits are in terms of tokens. We are allowed (I think) 2048 tokens. Unfortunately,
+        // there's no easy way to calculate the number of tokens our prompt contains. This number
+        // is currently set to be quite conservative, but still large enough to contain most single-edit
+        // changes.
         suffix: diff.chars().take((2048 - 100) * 2 - prefixlen).collect(),
         temperature: 0.7,
         max_tokens: 100,
@@ -60,135 +65,251 @@ fn get_commit_message(name: String, email: String, diff: String) -> String {
         presence_penalty: 0.0,
     };
     // TODO limit length of diff to ensure no errors
-    let response = client.post("https://api.openai.com/v1/completions")
+    let response = client
+        .post("https://api.openai.com/v1/completions")
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", key))
         .json(&request)
-        .send()
-        .unwrap();
-    let response: OpenAiResponse = response.json().unwrap();
+        .send()?;
+    let response: OpenAiResponse = response.json()?;
 
-    let issue_re = Regex::new(r"(\(?(([Ff]ix(es)?)|([Cc]loses?))?\s*#\d+\)?)|([Mm]erge [Pp].*\n)").unwrap();
+    let issue_re =
+        regex::Regex::new(r"(\(?(([Ff]ix(es)?)|([Cc]loses?))?\s*#\d+\)?)|([Mm]erge [Pp].*\n)")
+            .expect("Regex failed to compile");
     let commit_message = issue_re.replace_all(&response.choices[0].text, "");
-    commit_message.trim().split('\n').next().unwrap().to_string()
+    Ok(commit_message
+        .trim()
+        .split('\n')
+        .next()
+        .expect("Result of split() had no entries!")
+        .to_string())
 }
 
-fn try_commit(r: &Repository) {
-    // 1. What branch are we on?
-    let (headbranchname, headcommit) = if let Ok(head_ref) = r.head() {
-        if !head_ref.is_branch() {
-            eprintln!("Either the repository is empty, or is a bare repository, or is in a detached-head state.");
-            eprintln!("gwipt requires that you check out a non-empty branch.");
-            return
-        }
-        if let (Some(target), Ok(commit)) = (head_ref.shorthand(), head_ref.peel_to_commit()) {
-            (target.to_string(), commit)
-        } else {
-            eprintln!("Either the repository is empty, or is a bare repository, or is in a detached-head state.");
-            eprintln!("gwipt requires that you check out a non-empty branch.");
-            return
-        }
-    } else {
-        eprintln!("Either the repository is empty, or is a bare repository, or is in a detached-head state.");
-        eprintln!("gwipt requires that you check out a non-empty branch.");
-        return
-    };
-
-    let wipbranchname = String::from("wip/") + &headbranchname;
-    let headid = headcommit.id();
-
-    // Does the wip branch already exist? If so, is HEAD reachable from it? If not, create it and
-    // point it at HEAD. otherwise, leave it be.
-
-    // Make the wip branch if it doesn't exist
-    let (wipbranch, wipcommitid) = if let Ok(branch) = r.find_branch(&wipbranchname, git2::BranchType::Local) {
-        eprintln!("found branch");
-        if let Ok(commit) = branch.get().peel_to_commit() {
-            eprintln!("peeled branch to commit {}", commit.id());
-            (branch, commit.id())
-        } else {
-            eprintln!("could not peel branch to commit");
-            (r.branch(&wipbranchname, &headcommit, true).unwrap(), headid)
-        }
-    } else {
-        eprintln!("could not find branch");
-        (r.branch(&wipbranchname, &headcommit, true).unwrap(), headid)
-    };
-
-    let wipbranch = if let Ok(true) = (r.graph_descendant_of(wipcommitid, headid).map(|desc| desc || (headid == wipcommitid))) {
-        // Is an ancestor; we just want to make a new commit on the same branch
-        eprintln!("wipbranch := wipbranch");
-        wipbranch
-    } else {
-        // Not an ancestor; we want to reset the branch to point at the current commit
-        eprintln!("wipbranch := new branch from head");
-        r.branch(&wipbranchname, &headcommit, true).unwrap()
-    };
-
-    // 2. Is there a diff?
-    let mut diff_options = git2::DiffOptions::new();
-    diff_options.minimal(true);
-    let mut diff_lines = vec![String::from("\n\n")];
-    let diff = r.diff_tree_to_workdir(Some(&wipbranch.get().peel_to_tree().unwrap()), Some(&mut diff_options)).unwrap();
-    diff.print(git2::DiffFormat::Patch, |_, _, l| {
-        let line = if ['+', '-', ' '].contains(&l.origin()) {
-            format!("{}{}", l.origin(), str::from_utf8(l.content()).unwrap())
-        } else {
-            format!("{}", str::from_utf8(l.content()).unwrap())
-        };
-        diff_lines.push(line);
-        true
-    }).unwrap();
-    if diff_lines.len() <= 1 {
-        return
+fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
+    let head_ref = repo.head()?;
+    if !head_ref.is_branch() {
+        return Err(git2::Error::from_str(
+            "You must check out a branch for gwipt to work.",
+        ));
     }
+    let head_branch_name = head_ref
+        .shorthand()
+        .ok_or(git2::Error::from_str("Could not get branch name"))?;
+    let wip_branch_name = String::from("wip/") + &head_branch_name;
+    let head_commit = head_ref.peel_to_commit()?;
+    let head_tree = head_commit.tree()?;
+    let head_commit_id = head_commit.id();
+    let mut existing_wip_branch =
+        if let Ok(branch) = repo.find_branch(&wip_branch_name, git2::BranchType::Local) {
+            branch
+        } else {
+            debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
+            repo.branch(&wip_branch_name, &head_commit, false)?
+        };
+    let existing_wip_commit = existing_wip_branch.get().peel_to_commit()?;
+    let existing_wip_commit_id = existing_wip_commit.id();
+    let me = repo.signature()?;
 
-    // 3. Ask GPT-3 for commit message based on the diff
-    let config = r.config().unwrap();
-    let name = config.get_string("user.name").unwrap();
-    let email = config.get_string("user.email").unwrap();
-    let difftext = format!("{}", diff_lines.join(""));
-    let commit_message = "wip: ".to_string() + &get_commit_message(name, email, difftext);
-
-    // 4. Commit to wip/branch
-    let me = r.signature().unwrap();
-    let wipcommit = r.find_commit(wipcommitid).unwrap();
-    let mut wipindex = r.apply_to_tree(&wipcommit.tree().unwrap(), &diff, None).unwrap();
-    let wiptreeid = wipindex.write_tree_to(&r).unwrap();
-    let wiptree = r.find_tree(wiptreeid).unwrap();
-
-
-    let commit_id = r.commit(None, &me, &me, &commit_message, &wiptree, &[&wipcommit]).unwrap();
-    r.branch(&wipbranchname, &r.find_commit(commit_id).unwrap(), true).unwrap();
-    println!("Committed to {}: {} {}", &wipbranchname, &commit_id, &commit_message);
+    if existing_wip_commit_id != head_commit_id
+        && !repo.graph_descendant_of(existing_wip_commit_id, head_commit_id)?
+    {
+        let message = "Merge HEAD into wip/ branch";
+        let new_commit_id = repo.commit(
+            Some(&(String::from("refs/heads/") + &wip_branch_name)),
+            &me,
+            &me,
+            message,
+            &head_tree,
+            &[&existing_wip_commit, &head_commit],
+        )?;
+        info!("{}: {}", new_commit_id, message);
+        existing_wip_branch.delete()?;
+        debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
+        repo.branch(&wip_branch_name, &head_commit, false)?;
+    }
+    Ok(wip_branch_name)
 }
 
-fn main() -> Result<()> {
-    // TODO replace unwrap with logging and error codes
-    let repository = Repository::discover(".").unwrap();
-    let cwd = std::env::current_dir().unwrap();
+fn prepare_diff<'a, 'b>(
+    repo: &'a Repository,
+    wip_branch_name: &'b str,
+) -> Result<(git2::Signature<'a>, git2::Diff<'a>), git2::Error> {
+    let wip_branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
+    let wip_tree = wip_branch.get().peel_to_tree()?;
+    let mut diff_options = git2::DiffOptions::new();
+    diff_options.minimal(true).include_untracked(true).recurse_untracked_dirs(true);
+    let diff = repo.diff_tree_to_workdir(Some(&wip_tree), Some(&mut diff_options))?;
+
+    Ok((repo.signature()?, diff))
+}
+
+// Copied from https://github.com/rust-lang/git2-rs/blob/master/src/util.rs
+#[cfg(unix)]
+pub fn bytes2path(b: &[u8]) -> &Path {
+    use std::os::unix::prelude::*;
+    Path::new(OsStr::from_bytes(b))
+}
+
+#[cfg(windows)]
+pub fn bytes2path(b: &[u8]) -> &Path {
+    use std::str;
+    Path::new(str::from_utf8(b).unwrap())
+}
+
+enum TreeNode {
+    Internal(String),
+    Leaf(String, git2::Oid, u32),
+}
+
+fn try_commit(
+    repo: &Repository,
+    wip_branch_name: &str,
+    commit_message: &str,
+    diff: &git2::Diff,
+) -> Result<git2::Oid, git2::Error> {
+    // at this point, we have a wip branch ready to go. We need to add everything (other than
+    // ignored stuff) in the current working directory to a tree, and commit it to the tip of the
+    // wip branch.
+    let path = repo
+        .path()
+        .parent()
+        .expect("Git repository does not appear to have a parent dir")
+        .to_path_buf();
+
+    let mut index = repo.index()?;
+    index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+    let branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
+    let result_tree_id = index.write_tree()?;
+    let result_tree = repo.find_tree(result_tree_id)?;
+    let me = repo.signature()?;
+    debug!("branchname: {}", wip_branch_name);
+    debug!("parent commit_id: {}", &branch.get().peel_to_commit()?.id());
+    debug!("tree_id: {}", result_tree_id);
+    repo.commit(
+        Some(&(String::from("refs/heads/") + wip_branch_name)),
+        &me,
+        &me,
+        commit_message,
+        &result_tree,
+        &[&branch.get().peel_to_commit()?],
+    )
+}
+
+fn handle_change(repo: &Repository) {
+    match prepare_wip_branch(repo) {
+        Ok(name) => match prepare_diff(repo, &name) {
+            Ok((signature, diff)) => {
+                let mut diff_lines = vec![String::from("\n\n")];
+                match diff.print(git2::DiffFormat::Patch, |_, _, l| {
+                    let line = if ['+', '-', ' '].contains(&l.origin()) {
+                        format!(
+                            "{}{}",
+                            l.origin(),
+                            std::str::from_utf8(l.content()).unwrap()
+                        )
+                    } else {
+                        format!("{}", std::str::from_utf8(l.content()).unwrap())
+                    };
+                    diff_lines.push(line);
+                    true
+                }) {
+                    Ok(()) => {
+                        if diff_lines.len() <= 1 {
+                            debug!("Empty diff");
+                            return;
+                        }
+                        let difftext = diff_lines.join("");
+                        match get_commit_message(
+                            signature.name().unwrap().to_string(),
+                            signature.email().unwrap().to_string(),
+                            difftext,
+                        ) {
+                            Ok(message) => {
+                                debug!("Got a commit message");
+                                match try_commit(repo, &name, &message, &diff) {
+                                    Ok(id) => info!("Commit {}: {}", id, message),
+                                    Err(e) => error!("Failed to commit to wip branch: {}", e),
+                                }
+                            }
+                            Err(e) => error!("Could not get commit message: {}", e),
+                        }
+                    }
+                    Err(e) => error!("Could not extract diff lines: {}", e),
+                };
+            }
+            Err(e) => error!("Could not prepare diff: {}", e),
+        },
+        Err(e) => error!("Could not prepare wip branch: {}", e),
+    }
+    debug!("Change handler exit");
+}
+
+#[derive(Debug)]
+enum AppError {
+    GitError(git2::Error),
+    NotifyError(notify_debouncer_mini::notify::Error),
+}
+
+impl std::fmt::Display for AppError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            AppError::GitError(e) => write!(f, "Git Error: {}", e),
+            AppError::NotifyError(e) => write!(f, "File watcher error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for AppError {}
+
+impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
+    fn from(e: notify_debouncer_mini::notify::Error) -> Self {
+        AppError::NotifyError(e)
+    }
+}
+
+fn main() -> Result<(), AppError> {
+    use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
+    tracing_subscriber::fmt::init();
+    let repository = match Repository::discover(".") {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Git error: {}", &e);
+            return Err(AppError::GitError(e));
+        }
+    };
+    let path = repository
+        .path()
+        .parent()
+        .expect("Git repository does not appear to have a parent dir")
+        .to_path_buf();
+    debug!("Found git repository at {}", path.display());
 
     let mut debouncer = new_debouncer(
         std::time::Duration::new(0, 100_000_000),
         None,
-        move |res: DebounceEventResult| {
-            match res {
-                Ok(events) => {
-                    let any_non_git_files =  events.iter().any(|e| {
-                        let p = &e.path;
-                        !p.components().any(|part| part == std::path::Component::Normal(std::ffi::OsStr::new(".git")))
-                    });
-                    if any_non_git_files {
-                        try_commit(&repository);
-                    }
+        move |res: DebounceEventResult| match res {
+            Ok(events) => {
+                debug!("{} events", events.len());
+                let any_non_git_files = events.iter().any(|e| {
+                    let p = &e.path;
+                    !p.components().any(|part| {
+                        part == std::path::Component::Normal(std::ffi::OsStr::new(".git"))
+                    })
+                });
+                if any_non_git_files {
+                    debug!("Found files not in a .git directory");
+                    handle_change(&repository);
+                } else {
+                    debug!("No files outside of .git changed");
                 }
-                Err(e) => eprintln!("Error watching files: {:?}", e),
             }
-        }).unwrap();
+            Err(e) => error!("Error watching files: {:?}", e),
+        },
+    )?;
 
-    debouncer.watcher().watch(Path::new("."), RecursiveMode::Recursive)?;
+    debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
+
+    debug!("Set up filewatcher");
 
     loop {}
-
-    Ok(())
 }
