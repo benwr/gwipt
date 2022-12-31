@@ -17,10 +17,11 @@ API key. Then, `cd` into the repository, and...
 gwipt
 ```
 
-Boom! Every change you make in the working tree is now saved, with a
-descriptive commit message. Say you're on branch `A`; then all your changes
-(including untracked files) will be automatically committed to `wip/A`, and you
-can explore them whenever you want.
+Boom! As long as the program is running, every change you make in the working
+tree is now saved, with a descriptive commit message that will be printed to
+stdout. Say you're on branch `A`; then all your changes (including untracked
+files) will be automatically committed to `wip/A`, and you can explore them
+whenever you want.
 
 You can see a few testing examples in the
 [wip/main](https://github.com/benwr/gwipt/commits/wip/main) branch of this
