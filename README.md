@@ -22,11 +22,6 @@ descriptive commit message. Say you're on branch `A`; then all your changes
 (including untracked files) will be automatically committed to `wip/A`, and you
 can explore them whenever you want.
 
-You can see a few testing examples on the
-[wip/main](https://github.com/benwr/gwipt/compare/wip/main) branch of
-this repository. This is alpha-quality software, but I'm pleased enough with
-the results that I'm already using it for my personal projects.
-
 ## Installation
 
 ```bash
