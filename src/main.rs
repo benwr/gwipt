@@ -1,7 +1,5 @@
 use git2::Repository;
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
 use tracing::{debug, error, info};
 
 #[derive(Debug, Serialize)]
@@ -99,11 +97,15 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
     let head_commit = head_ref.peel_to_commit()?;
     let head_tree = head_commit.tree()?;
     let head_commit_id = head_commit.id();
-    let mut existing_wip_branch =
+    let existing_wip_branch =
         if let Ok(branch) = repo.find_branch(&wip_branch_name, git2::BranchType::Local) {
             branch
         } else {
-            debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
+            debug!(
+                "Branching to {} with {}",
+                &wip_branch_name,
+                head_commit.id()
+            );
             repo.branch(&wip_branch_name, &head_commit, true)?
         };
     let existing_wip_commit = existing_wip_branch.get().peel_to_commit()?;
@@ -134,45 +136,24 @@ fn prepare_diff<'a, 'b>(
     let wip_branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
     let wip_tree = wip_branch.get().peel_to_tree()?;
     let mut diff_options = git2::DiffOptions::new();
-    diff_options.minimal(true).include_untracked(true).recurse_untracked_dirs(true).show_untracked_content(true);
+    diff_options
+        .minimal(true)
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true);
     let diff = repo.diff_tree_to_workdir(Some(&wip_tree), Some(&mut diff_options))?;
 
     Ok((repo.signature()?, diff))
-}
-
-// Copied from https://github.com/rust-lang/git2-rs/blob/master/src/util.rs
-#[cfg(unix)]
-pub fn bytes2path(b: &[u8]) -> &Path {
-    use std::os::unix::prelude::*;
-    Path::new(OsStr::from_bytes(b))
-}
-
-#[cfg(windows)]
-pub fn bytes2path(b: &[u8]) -> &Path {
-    use std::str;
-    Path::new(str::from_utf8(b).unwrap())
-}
-
-enum TreeNode {
-    Internal(String),
-    Leaf(String, git2::Oid, u32),
 }
 
 fn try_commit(
     repo: &Repository,
     wip_branch_name: &str,
     commit_message: &str,
-    diff: &git2::Diff,
 ) -> Result<git2::Oid, git2::Error> {
     // at this point, we have a wip branch ready to go. We need to add everything (other than
     // ignored stuff) in the current working directory to a tree, and commit it to the tip of the
     // wip branch.
-    let path = repo
-        .path()
-        .parent()
-        .expect("Git repository does not appear to have a parent dir")
-        .to_path_buf();
-
     let mut index = repo.index()?;
     index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
     let branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
@@ -223,7 +204,7 @@ fn handle_change(repo: &Repository) {
                         ) {
                             Ok(message) => {
                                 debug!("Got a commit message");
-                                match try_commit(repo, &name, &(String::from("wip: ") + &message), &diff) {
+                                match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
                                     Ok(id) => info!("Commit {}: {}", id, message),
                                     Err(e) => error!("Failed to commit to wip branch: {}", e),
                                 }
