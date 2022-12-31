@@ -104,7 +104,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
             branch
         } else {
             debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
-            repo.branch(&wip_branch_name, &head_commit, false)?
+            repo.branch(&wip_branch_name, &head_commit, true)?
         };
     let existing_wip_commit = existing_wip_branch.get().peel_to_commit()?;
     let existing_wip_commit_id = existing_wip_commit.id();
@@ -125,7 +125,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
         info!("{}: {}", new_commit_id, message);
         existing_wip_branch.delete()?;
         debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
-        repo.branch(&wip_branch_name, &head_commit, false)?;
+        repo.branch(&wip_branch_name, &head_commit, true)?;
     }
     Ok(wip_branch_name)
 }
@@ -137,7 +137,7 @@ fn prepare_diff<'a, 'b>(
     let wip_branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
     let wip_tree = wip_branch.get().peel_to_tree()?;
     let mut diff_options = git2::DiffOptions::new();
-    diff_options.minimal(true).include_untracked(true).recurse_untracked_dirs(true);
+    diff_options.minimal(true).include_untracked(true).recurse_untracked_dirs(true).show_untracked_content(true);
     let diff = repo.diff_tree_to_workdir(Some(&wip_tree), Some(&mut diff_options))?;
 
     Ok((repo.signature()?, diff))
@@ -226,7 +226,7 @@ fn handle_change(repo: &Repository) {
                         ) {
                             Ok(message) => {
                                 debug!("Got a commit message");
-                                match try_commit(repo, &name, &message, &diff) {
+                                match try_commit(repo, &name, &(String::from("wip: ") + &message), &diff) {
                                     Ok(id) => info!("Commit {}: {}", id, message),
                                     Err(e) => error!("Failed to commit to wip branch: {}", e),
                                 }
