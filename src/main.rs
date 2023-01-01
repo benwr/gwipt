@@ -36,9 +36,18 @@ struct OpenAiResponse {
     // usage: Usage,
 }
 
+#[derive(Debug)]
 enum CommitMessageError {
     RequestError(reqwest::Error),
     MissingApiKey,
+}
+
+impl Error for CommitMessageError {}
+
+impl std::convert::From<reqwest::Error> for CommitMessageError {
+    fn from(e: reqwest::Error) -> Self {
+        CommitMessageError::RequestError(e)
+    }
 }
 
 fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Result<String> {
