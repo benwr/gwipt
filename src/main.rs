@@ -88,7 +88,6 @@ fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Res
         frequency_penalty: 0.1,
         presence_penalty: 0.0,
     };
-    // TODO limit length of diff to ensure no errors
     let response = client
         .post("https://api.openai.com/v1/completions")
         .header("Content-Type", "application/json")
