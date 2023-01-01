@@ -36,7 +36,30 @@ struct OpenAiResponse {
     // usage: Usage,
 }
 
-fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Result<String> {
+#[derive(Debug)]
+enum CommitMessageError {
+    RequestError(reqwest::Error),
+    MissingApiKey,
+}
+
+impl std::fmt::Display for CommitMessageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            CommitMessageError::RequestError(e) => write!(f, "Request Error: {}", e),
+            CommitMessageError::MissingApiKey => write!(f, "OPENAI_API_KEY environment variable is not set."),
+        }
+    }
+}
+
+impl std::error::Error for CommitMessageError {}
+
+impl std::convert::From<reqwest::Error> for CommitMessageError {
+    fn from(e: reqwest::Error) -> Self {
+        CommitMessageError::RequestError(e)
+    }
+}
+
+fn get_commit_message(name: String, email: String, diff: String) -> Result<String, CommitMessageError> {
     let now = chrono::Local::now();
     let prefix = format!(
         "Author: {} <{}>\nDate:   {}",
@@ -44,8 +67,11 @@ fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Res
         email,
         now.format("%a %b %-d %H:%M:%S %Y %z")
     );
-    let key =
-        std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable must be set");
+    let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
+        k
+    } else {
+        return Err(CommitMessageError::MissingApiKey)
+    };
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
     let request = OpenAiRequest {
@@ -62,7 +88,6 @@ fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Res
         frequency_penalty: 0.1,
         presence_penalty: 0.0,
     };
-    // TODO limit length of diff to ensure no errors
     let response = client
         .post("https://api.openai.com/v1/completions")
         .header("Content-Type", "application/json")
