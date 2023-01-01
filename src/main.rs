@@ -42,6 +42,15 @@ enum CommitMessageError {
     MissingApiKey,
 }
 
+impl std::fmt::Display for CommitMessageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            CommitMessageError::RequestError(e) => write!(f, "Request Error: {}", e),
+            CommitMessageError::MissingApiKey => write!(f, "OPENAI_API_KEY environment variable is not set."),
+        }
+    }
+}
+
 impl Error for CommitMessageError {}
 
 impl std::convert::From<reqwest::Error> for CommitMessageError {
