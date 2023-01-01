@@ -70,7 +70,7 @@ fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Res
     let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
         k
     } else {
-        return Err("OPENAI_API_KEY environment variable must be set")
+        return Err(CommitMessageError::MissingApiKey)
     };
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
