@@ -36,6 +36,11 @@ struct OpenAiResponse {
     // usage: Usage,
 }
 
+enum CommitMessageError {
+    RequestError(reqwest::Error),
+    MissingApiKey,
+}
+
 fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Result<String> {
     let now = chrono::Local::now();
     let prefix = format!(
@@ -44,8 +49,11 @@ fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Res
         email,
         now.format("%a %b %-d %H:%M:%S %Y %z")
     );
-    let key =
-        std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable must be set");
+    let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
+        k
+    } else {
+        return Err("OPENAI_API_KEY environment variable must be set")
+    }
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
     let request = OpenAiRequest {
