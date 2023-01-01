@@ -51,7 +51,7 @@ impl std::fmt::Display for CommitMessageError {
     }
 }
 
-impl Error for CommitMessageError {}
+impl std::error::Error for CommitMessageError {}
 
 impl std::convert::From<reqwest::Error> for CommitMessageError {
     fn from(e: reqwest::Error) -> Self {
@@ -71,7 +71,7 @@ fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Res
         k
     } else {
         return Err("OPENAI_API_KEY environment variable must be set")
-    }
+    };
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
     let request = OpenAiRequest {
