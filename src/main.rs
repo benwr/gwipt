@@ -59,7 +59,7 @@ impl std::convert::From<reqwest::Error> for CommitMessageError {
     }
 }
 
-fn get_commit_message(name: String, email: String, diff: String) -> reqwest::Result<String> {
+fn get_commit_message(name: String, email: String, diff: String) -> Result<String, CommitMessageError> {
     let now = chrono::Local::now();
     let prefix = format!(
         "Author: {} <{}>\nDate:   {}",
