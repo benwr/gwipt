@@ -272,7 +272,7 @@ impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
 }
 
 impl std::convert::From<time::error::IndeterminateOffset> for AppError {
-    fn from(e: notify_debouncer_mini::notify::Error) -> Self {
+    fn from(e: time::error::IndeterminateOffset) -> Self {
         AppError::TimeError(e)
     }
 }
