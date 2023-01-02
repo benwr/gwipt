@@ -163,6 +163,7 @@ fn prepare_diff<'a, 'b>(
     let mut diff_options = git2::DiffOptions::new();
     diff_options
         .minimal(true)
+        .context_lines(5)
         .include_untracked(true)
         .recurse_untracked_dirs(true)
         .show_untracked_content(true);
