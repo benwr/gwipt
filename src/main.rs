@@ -274,7 +274,7 @@ fn main() -> Result<(), AppError> {
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
     use tracing_subscriber::fmt::time::LocalTime;
     use time::macros::format_description;
-    let format = fmt::format()
+    let format = tracing_subscriber::fmt::format()
         .with_level(false)
         .with_target(false)
         .with_thread_ids(false)
