@@ -85,7 +85,7 @@ fn get_commit_message(name: String, email: String, diff: String, offset: time::U
         email,
         now.format(format_description!("[weekday repr:short] [month repr:short] [day padding:none] [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"))?
     );
-    info!("diff prefix: {}", &prefix);
+    debug!("diff prefix: {}", &prefix);
     let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
         k
     } else {
@@ -341,7 +341,7 @@ fn main() -> Result<(), AppError> {
     handle_change(&repository, offset.clone());
 
     let mut debouncer = new_debouncer(
-        std::time::Duration::new(0, 100_000_000),
+        std::time::Duration::from_secs_f64(args.time_delay),
         None,
         move |res: DebounceEventResult| match res {
             Ok(events) => {
