@@ -272,14 +272,14 @@ impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
 
 fn main() -> Result<(), AppError> {
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
-    use tracing_subscriber::fmt::time::LocalTime;
+    use tracing_subscriber::fmt::time::SystemTime;
     use time::macros::format_description;
     let format = tracing_subscriber::fmt::format()
         .with_level(false)
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(LocalTime::new(format_description!("[hour]:[minute]:[second]")));
+        .with_timer(SystemTime::new(format_description!("[hour]:[minute]:[second]")));
     tracing_subscriber::fmt()
         .event_format(format)
         .init();
