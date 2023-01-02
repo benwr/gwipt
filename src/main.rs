@@ -311,7 +311,7 @@ impl std::convert::From<time::error::IndeterminateOffset> for AppError {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// How long to wait to accumulate changes before committing, in secs. Recommended to be > 0.1
+    /// How long to wait to accumulate changes before committing, in secs. Recommended to be >= 0.1
     #[arg(short, long, default_value_t = 0.1)]
     time_delay: f64,
 }
