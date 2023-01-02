@@ -149,7 +149,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
             &head_tree,
             &[&existing_wip_commit, &head_commit],
         )?;
-        info!("{}: {}", new_commit_id[..6], message);
+        info!("{}: {}", new_commit_id.to_string()[..6], message);
     }
     Ok(wip_branch_name)
 }
