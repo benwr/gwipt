@@ -251,6 +251,7 @@ fn handle_change(repo: &Repository) {
 enum AppError {
     GitError(git2::Error),
     NotifyError(notify_debouncer_mini::notify::Error),
+    TimeError(time::IndeterminateOffset),
 }
 
 impl std::fmt::Display for AppError {
@@ -267,6 +268,12 @@ impl std::error::Error for AppError {}
 impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     fn from(e: notify_debouncer_mini::notify::Error) -> Self {
         AppError::NotifyError(e)
+    }
+}
+
+impl std::convert::From<time::IndeterminateOffset> for AppError {
+    fn from(e: notify_debouncer_mini::notify::Error) -> Self {
+        AppError::TimeError(e)
     }
 }
 
