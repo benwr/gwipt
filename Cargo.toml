@@ -13,7 +13,7 @@ git2 = "0.15"
 regex = "1"
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 serde = { version = "1", features = ["derive"] }
-time = { version = "0.3", features = ["formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "macros", "unsound_local_offset"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "local-time", "std", "time", "unsound-local-offset"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "local-time", "std", "time"] }
 notify-debouncer-mini = "0.2"
