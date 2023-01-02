@@ -1,5 +1,6 @@
 use git2::Repository;
 use serde::{Deserialize, Serialize};
+use time::macros::format_description;
 use tracing::{debug, error, info};
 
 #[derive(Debug, Serialize)]
@@ -73,7 +74,7 @@ fn get_commit_message(name: String, email: String, diff: String) -> Result<Strin
         "Author: {} <{}>\nDate:   {}",
         name,
         email,
-        now.format("%a %b %-d %H:%M:%S %Y %z")
+        now.format(format_description!("[weekday repr:short] [month repr:short] [day padding:none] [hour]:[minute]:[second] [year] %z"))
     );
     let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
         k
@@ -290,7 +291,6 @@ impl std::convert::From<time::error::IndeterminateOffset> for AppError {
 fn main() -> Result<(), AppError> {
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
     use tracing_subscriber::fmt::time::OffsetTime;
-    use time::macros::format_description;
     let format = tracing_subscriber::fmt::format()
         .with_level(false)
         .with_target(false)
