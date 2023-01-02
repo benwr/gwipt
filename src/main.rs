@@ -1,5 +1,5 @@
-use git2::Repository;
 use clap::Parser;
+use git2::Repository;
 use serde::{Deserialize, Serialize};
 use time::macros::format_description;
 use tracing::{debug, error, info};
@@ -52,7 +52,9 @@ impl std::fmt::Display for CommitMessageError {
             CommitMessageError::RequestError(e) => write!(f, "Request Error: {}", e),
             CommitMessageError::TimeError(e) => write!(f, "Time error: {}", e),
             CommitMessageError::TimeFormatError(e) => write!(f, "Time formatting error: {}", e),
-            CommitMessageError::MissingApiKey => write!(f, "OPENAI_API_KEY environment variable is not set."),
+            CommitMessageError::MissingApiKey => {
+                write!(f, "OPENAI_API_KEY environment variable is not set.")
+            }
         }
     }
 }
@@ -77,7 +79,12 @@ impl std::convert::From<time::error::Format> for CommitMessageError {
     }
 }
 
-fn get_commit_message(name: String, email: String, diff: String, offset: time::UtcOffset) -> Result<String, CommitMessageError> {
+fn get_commit_message(
+    name: String,
+    email: String,
+    diff: String,
+    offset: time::UtcOffset,
+) -> Result<String, CommitMessageError> {
     let now = time::OffsetDateTime::now_utc().replace_offset(offset);
     let prefix = format!(
         "Author: {} <{}>\nDate:   {}",
@@ -85,11 +92,12 @@ fn get_commit_message(name: String, email: String, diff: String, offset: time::U
         email,
         now.format(format_description!("[weekday repr:short] [month repr:short] [day padding:none] [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"))?
     );
+
     debug!("diff prefix: {}", &prefix);
     let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
         k
     } else {
-        return Err(CommitMessageError::MissingApiKey)
+        return Err(CommitMessageError::MissingApiKey);
     };
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
@@ -103,8 +111,8 @@ fn get_commit_message(name: String, email: String, diff: String, offset: time::U
         suffix: diff.chars().take((2048 - 100) * 2 - prefixlen).collect(),
         temperature: 0.7,
         max_tokens: 100,
-        top_p: 0.9,
-        frequency_penalty: 0.1,
+        top_p: 1.0,
+        frequency_penalty: 0.0,
         presence_penalty: 0.0,
     };
     let response = client
@@ -319,10 +327,11 @@ fn main() -> Result<(), AppError> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(OffsetTime::new(offset.clone(), format_description!("[hour]:[minute]:[second]")));
-    tracing_subscriber::fmt()
-        .event_format(format)
-        .init();
+        .with_timer(OffsetTime::new(
+            offset.clone(),
+            format_description!("[hour]:[minute]:[second]"),
+        ));
+    tracing_subscriber::fmt().event_format(format).init();
     let repository = match Repository::discover(".") {
         Ok(r) => r,
         Err(e) => {
