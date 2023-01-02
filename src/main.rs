@@ -77,8 +77,7 @@ impl std::convert::From<time::error::Format> for CommitMessageError {
     }
 }
 
-fn get_commit_message(name: String, email: String, diff: String) -> Result<String, CommitMessageError> {
-    let offset = time::UtcOffset::current_local_offset()?;
+fn get_commit_message(name: String, email: String, diff: String, offset: time::UtcOffset) -> Result<String, CommitMessageError> {
     let now = time::OffsetDateTime::now_utc().replace_offset(offset);
     let prefix = format!(
         "Author: {} <{}>\nDate:   {}",
@@ -219,7 +218,7 @@ fn try_commit(
     )
 }
 
-fn handle_change(repo: &Repository) {
+fn handle_change(repo: &Repository, offset: time::UtcOffset) {
     match prepare_wip_branch(repo) {
         Ok(name) => match prepare_diff(repo, &name) {
             Ok((signature, diff)) => {
@@ -247,6 +246,7 @@ fn handle_change(repo: &Repository) {
                             signature.name().unwrap().to_string(),
                             signature.email().unwrap().to_string(),
                             difftext,
+                            offset,
                         ) {
                             Ok(message) => {
                                 debug!("Got a commit message");
@@ -305,12 +305,13 @@ impl std::convert::From<time::error::IndeterminateOffset> for AppError {
 struct Args {
     /// How long to wait to accumulate changes before committing, in secs. Recommended to be > 0.1
     #[arg(short, long, default_value_t = 0.1)]
-    time: f64,
+    time_delay: f64,
 }
 
 fn main() -> Result<(), AppError> {
     let args = Args::parse();
 
+    let offset = time::UtcOffset::current_local_offset()?;
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
     use tracing_subscriber::fmt::time::OffsetTime;
     let format = tracing_subscriber::fmt::format()
@@ -318,7 +319,7 @@ fn main() -> Result<(), AppError> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(OffsetTime::new(time::UtcOffset::current_local_offset()?, format_description!("[hour]:[minute]:[second]")));
+        .with_timer(OffsetTime::new(offset.clone(), format_description!("[hour]:[minute]:[second]")));
     tracing_subscriber::fmt()
         .event_format(format)
         .init();
@@ -337,7 +338,7 @@ fn main() -> Result<(), AppError> {
     debug!("Found git repository at {}", path.display());
 
     debug!("Doing an unconditional first pass in case there are existing changes to commit.");
-    handle_change(&repository);
+    handle_change(&repository, offset.clone());
 
     let mut debouncer = new_debouncer(
         std::time::Duration::new(0, 100_000_000),
@@ -353,7 +354,7 @@ fn main() -> Result<(), AppError> {
                 });
                 if any_non_git_files {
                     debug!("Found files not in a .git directory");
-                    handle_change(&repository);
+                    handle_change(&repository, offset);
                 } else {
                     debug!("No files outside of .git changed");
                 }
