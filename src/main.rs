@@ -230,7 +230,7 @@ fn handle_change(repo: &Repository) {
                             Ok(message) => {
                                 debug!("Got a commit message");
                                 match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
-                                    Ok(id) => info!("Commit {}: {}", id, message),
+                                    Ok(id) => info!("Commit {}: {}", &id.to_string()[..6], message),
                                     Err(e) => error!("Failed to commit to wip branch: {}", e),
                                 }
                             }
