@@ -279,7 +279,7 @@ fn main() -> Result<(), AppError> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(OffsetTime::new(UtcOffset::current_local_offset()?, format_description!("[hour]:[minute]:[second]")));
+        .with_timer(OffsetTime::new(time::UtcOffset::current_local_offset()?, format_description!("[hour]:[minute]:[second]")));
     tracing_subscriber::fmt()
         .event_format(format)
         .init();
