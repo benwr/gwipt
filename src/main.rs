@@ -341,7 +341,7 @@ fn main() -> Result<(), AppError> {
     handle_change(&repository, offset.clone());
 
     let mut debouncer = new_debouncer(
-        std::time::Duration::new(0, 100_000_000),
+        std::time::Duration::from_secs_f64(args.time_delay),
         None,
         move |res: DebounceEventResult| match res {
             Ok(events) => {
