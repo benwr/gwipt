@@ -259,6 +259,7 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::GitError(e) => write!(f, "Git Error: {}", e),
             AppError::NotifyError(e) => write!(f, "File watcher error: {}", e),
+            AppError::TimeError(e) => write!(f, "Time error: {}", e),
         }
     }
 }
