@@ -41,6 +41,7 @@ struct OpenAiResponse {
 enum CommitMessageError {
     RequestError(reqwest::Error),
     TimeError(time::error::IndeterminateOffset),
+    TimeFormatError(time::error::Format),
     MissingApiKey,
 }
 
@@ -49,6 +50,7 @@ impl std::fmt::Display for CommitMessageError {
         match self {
             CommitMessageError::RequestError(e) => write!(f, "Request Error: {}", e),
             CommitMessageError::TimeError(e) => write!(f, "Time error: {}", e),
+            CommitMessageError::TimeFormatError(e) => write!(f, "Time formatting error: {}", e),
             CommitMessageError::MissingApiKey => write!(f, "OPENAI_API_KEY environment variable is not set."),
         }
     }
@@ -65,6 +67,12 @@ impl std::convert::From<reqwest::Error> for CommitMessageError {
 impl std::convert::From<time::error::IndeterminateOffset> for CommitMessageError {
     fn from(e: time::error::IndeterminateOffset) -> Self {
         CommitMessageError::TimeError(e)
+    }
+}
+
+impl std::convert::From<time::error::Format> for CommitMessageError {
+    fn from(e: time::error::Format) -> Self {
+        CommitMessageError::TimeFormatError(e)
     }
 }
 
