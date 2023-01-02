@@ -9,11 +9,12 @@ repository = "https://github.com/benwr/gwipt"
 
 [dependencies]
 chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
 git2 = "0.15"
+notify-debouncer-mini = "0.2"
 regex = "1"
 reqwest = { version = "0.11", features = ["json", "blocking"] }
 serde = { version = "1", features = ["derive"] }
 time = { version = "0.3", features = ["formatting", "macros", "local-offset"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "local-time", "std", "time"] }
-notify-debouncer-mini = "0.2"
