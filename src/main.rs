@@ -323,6 +323,7 @@ fn main() -> Result<(), AppError> {
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
     use tracing_subscriber::fmt::time::OffsetTime;
     let format = tracing_subscriber::fmt::format()
+        .with_ansi(false)
         .with_level(false)
         .with_target(false)
         .with_thread_ids(false)
