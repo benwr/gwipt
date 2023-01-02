@@ -272,7 +272,18 @@ impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
 
 fn main() -> Result<(), AppError> {
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
-    tracing_subscriber::fmt::init();
+    use tracing_subscriber::fmt::time::LocalTime;
+    use time::macros::format_description;
+    let format = fmt::format()
+        .with_level(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_timer(LocalTime::new(format_description!("[hour]:[minute]:[second]")))
+        .compact();
+    tracing_subscriber::fmt()
+        .event_format(format)
+        .init();
     let repository = match Repository::discover(".") {
         Ok(r) => r,
         Err(e) => {
