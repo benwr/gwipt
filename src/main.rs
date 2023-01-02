@@ -149,7 +149,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
             &head_tree,
             &[&existing_wip_commit, &head_commit],
         )?;
-        info!("{}: {}", new_commit_id, message);
+        info!("{}: {}", &new_commit_id.to_string()[..6], message);
     }
     Ok(wip_branch_name)
 }
@@ -230,7 +230,7 @@ fn handle_change(repo: &Repository) {
                             Ok(message) => {
                                 debug!("Got a commit message");
                                 match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
-                                    Ok(id) => info!("Commit {}: {}", id, message),
+                                    Ok(id) => info!("Commit {}: {}", &id.to_string()[..6], message),
                                     Err(e) => error!("Failed to commit to wip branch: {}", e),
                                 }
                             }
@@ -251,6 +251,7 @@ fn handle_change(repo: &Repository) {
 enum AppError {
     GitError(git2::Error),
     NotifyError(notify_debouncer_mini::notify::Error),
+    TimeError(time::error::IndeterminateOffset),
 }
 
 impl std::fmt::Display for AppError {
@@ -258,6 +259,7 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::GitError(e) => write!(f, "Git Error: {}", e),
             AppError::NotifyError(e) => write!(f, "File watcher error: {}", e),
+            AppError::TimeError(e) => write!(f, "Time error: {}", e),
         }
     }
 }
@@ -270,9 +272,25 @@ impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     }
 }
 
+impl std::convert::From<time::error::IndeterminateOffset> for AppError {
+    fn from(e: time::error::IndeterminateOffset) -> Self {
+        AppError::TimeError(e)
+    }
+}
+
 fn main() -> Result<(), AppError> {
     use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
-    tracing_subscriber::fmt::init();
+    use tracing_subscriber::fmt::time::OffsetTime;
+    use time::macros::format_description;
+    let format = tracing_subscriber::fmt::format()
+        .with_level(false)
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_thread_names(false)
+        .with_timer(OffsetTime::new(time::UtcOffset::current_local_offset()?, format_description!("[hour]:[minute]:[second]")));
+    tracing_subscriber::fmt()
+        .event_format(format)
+        .init();
     let repository = match Repository::discover(".") {
         Ok(r) => r,
         Err(e) => {
