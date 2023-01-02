@@ -279,8 +279,7 @@ fn main() -> Result<(), AppError> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(LocalTime::new(format_description!("[hour]:[minute]:[second]")))
-        .compact();
+        .with_timer(LocalTime::new(format_description!("[hour]:[minute]:[second]")));
     tracing_subscriber::fmt()
         .event_format(format)
         .init();
