@@ -305,6 +305,9 @@ fn main() -> Result<(), AppError> {
         .to_path_buf();
     debug!("Found git repository at {}", path.display());
 
+    debug!("Doing an unconditional first pass in case there are existing changes to commit.");
+    handle_change(&repository);
+
     let mut debouncer = new_debouncer(
         std::time::Duration::new(0, 100_000_000),
         None,
