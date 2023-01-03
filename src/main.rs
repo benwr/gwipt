@@ -238,56 +238,44 @@ fn diff_lines(&git2::Diff) -> Result<Vec<&str>, std::str::Utf8Error> {
 #[derive(Debug)]
 enum ChangeHandlingError {
     GitError(git2::Error),
+    Utf8Error(str::Utf8Error),
 }
+
 impl std::fmt::Display for ChangeHandlingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
+            ChangeHandlingError::Utf8Error(e) => write!(f, "UTF-8 Error: {}", e),
         }
     }
 }
 
 impl std::error::Error for AppError {}
 
-fn handle_change(repo: &Repository, offset: time::UtcOffset) -> ChangeHandlingError {
-    let signature = repo.signature()?;
-
-    prepare_wip_branch(repo)
-        .map_err(|e| error!("Could not prepare wip branch: {}", e))
-        .and_then(
-            |name| prepare_diff(repo, &name)
-            .map_err(|e| error!("Could not prepare diff: {}", e))
-            .map(|(signature, diff)| (name, signature, diff)))
-        .and_then(|(name, signature, diff)|
-                  diff_lines(diff)
-             {
-                {
-                    Ok(()) => {
-                        if diff_lines.len() <= 1 {
-                            debug!("Empty diff");
-                            return;
-                        }
-                        let difftext = diff_lines.join("");
-                        match get_commit_message(
-                            signature.name().unwrap().to_string(),
-                            signature.email().unwrap().to_string(),
-                            difftext,
-                            offset,
-                        ) {
-                            Ok(message) => {
-                                debug!("Got a commit message");
-                                match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
-                                    Ok(id) => info!("Commit {}: {}", &id.to_string()[..6], message),
-                                    Err(e) => error!("Failed to commit to wip branch: {}", e),
-                                }
-                            }
-                            Err(e) => error!("Could not get commit message: {}", e),
-                        }
-                    }
-                    Err(e) => error!("Could not extract diff lines: {}", e),
-                };
+fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
+    let sig = repo.signature()?;
+    let name = prepare_wip_branch(repo)?;
+    let diff = prepare_diff(repo. &name)?;
+    let lines = diff_lines(diff)?;
+    if lines.len() <= 1 {
+        debug!("Empty diff");
+        return;
+    }
+    let diff_text = lines.join("");
+    match get_commit_message(sig.name()?.to_string(), sig.email()?.to_string(), difftext, offset) {
+        Ok(message) => {
+            debug!("Got a commit message");
+            match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
+                Ok(id) => info!("Commit {}: {}", &id.to_string()[..6], message),
+                Err(e) => error!("Failed to commit to wip branch: {}", e),
             }
-        )
+        }
+        Err(e) => error!("Could not get commit message: {}", e),
+    };
+}
+
+fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
+    handle_change_inner.unwrap_or_else(|e| error!("{}", e))
 }
 
 #[derive(Debug)]
