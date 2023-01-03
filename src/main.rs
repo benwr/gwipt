@@ -143,8 +143,8 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
     }
     let head_branch_name = head_ref
         .shorthand()
-        .ok_or(git2::Error::from_str("Could not get branch name"))?;
-    let wip_branch_name = String::from("wip/") + &head_branch_name;
+        .ok_or_else(|| git2::Error::from_str("Could not get branch name"))?;
+    let wip_branch_name = String::from("wip/") + head_branch_name;
     let head_commit = head_ref.peel_to_commit()?;
     let head_tree = head_commit.tree()?;
     let head_commit_id = head_commit.id();
@@ -217,7 +217,7 @@ fn try_commit(
     )
 }
 
-fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<String>, git2::Error> {
+fn diff_lines(diff: &git2::Diff) -> Result<Vec<String>, git2::Error> {
     let mut lines = vec![String::from("\n\n")];
     diff.print(git2::DiffFormat::Patch, |_, _, l| {
         let line = if ['+', '-', ' '].contains(&l.origin()) {
@@ -227,7 +227,7 @@ fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<String>, git2::Error> {
                 std::str::from_utf8(l.content()).unwrap_or("")
             )
         } else {
-            format!("{}", std::str::from_utf8(l.content()).unwrap_or(""))
+            std::str::from_utf8(l.content()).unwrap_or("").to_string()
         };
         lines.push(line);
         true
@@ -237,19 +237,19 @@ fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<String>, git2::Error> {
 
 #[derive(Debug)]
 enum ChangeHandlingError {
-    GitError(git2::Error),
-    CommitMessageError(CommitMessageError),
-    Utf8Error(std::str::Utf8Error),
+    Git(git2::Error),
+    CommitMessage(CommitMessageError),
+    Utf8(std::str::Utf8Error),
 }
 
 impl std::fmt::Display for ChangeHandlingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
-            ChangeHandlingError::CommitMessageError(e) => {
+            ChangeHandlingError::Git(e) => write!(f, "Git Error: {}", e),
+            ChangeHandlingError::CommitMessage(e) => {
                 write!(f, "Error getting commit message: {}", e)
             }
-            ChangeHandlingError::Utf8Error(e) => write!(f, "UTF-8 Error: {}", e),
+            ChangeHandlingError::Utf8(e) => write!(f, "UTF-8 Error: {}", e),
         }
     }
 }
@@ -258,19 +258,19 @@ impl std::error::Error for ChangeHandlingError {}
 
 impl std::convert::From<git2::Error> for ChangeHandlingError {
     fn from(e: git2::Error) -> Self {
-        ChangeHandlingError::GitError(e)
+        ChangeHandlingError::Git(e)
     }
 }
 
 impl std::convert::From<CommitMessageError> for ChangeHandlingError {
     fn from(e: CommitMessageError) -> Self {
-        ChangeHandlingError::CommitMessageError(e)
+        ChangeHandlingError::CommitMessage(e)
     }
 }
 
 impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
     fn from(e: std::str::Utf8Error) -> Self {
-        ChangeHandlingError::Utf8Error(e)
+        ChangeHandlingError::Utf8(e)
     }
 }
 
@@ -305,17 +305,17 @@ fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
 
 #[derive(Debug)]
 enum AppError {
-    GitError(git2::Error),
-    NotifyError(notify_debouncer_mini::notify::Error),
-    TimeError(time::error::IndeterminateOffset),
+    Git(git2::Error),
+    Notify(notify_debouncer_mini::notify::Error),
+    Time(time::error::IndeterminateOffset),
 }
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            AppError::GitError(e) => write!(f, "Git Error: {}", e),
-            AppError::NotifyError(e) => write!(f, "File watcher error: {}", e),
-            AppError::TimeError(e) => write!(f, "Time error: {}", e),
+            AppError::Git(e) => write!(f, "Git Error: {}", e),
+            AppError::Notify(e) => write!(f, "File watcher error: {}", e),
+            AppError::Time(e) => write!(f, "Time error: {}", e),
         }
     }
 }
@@ -324,19 +324,19 @@ impl std::error::Error for AppError {}
 
 impl std::convert::From<git2::Error> for AppError {
     fn from(e: git2::Error) -> Self {
-        AppError::GitError(e)
+        AppError::Git(e)
     }
 }
 
 impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     fn from(e: notify_debouncer_mini::notify::Error) -> Self {
-        AppError::NotifyError(e)
+        AppError::Notify(e)
     }
 }
 
 impl std::convert::From<time::error::IndeterminateOffset> for AppError {
     fn from(e: time::error::IndeterminateOffset) -> Self {
-        AppError::TimeError(e)
+        AppError::Time(e)
     }
 }
 
@@ -362,7 +362,7 @@ fn main() -> Result<(), AppError> {
         .with_thread_ids(false)
         .with_thread_names(false)
         .with_timer(OffsetTime::new(
-            offset.clone(),
+            offset,
             format_description!("[hour]:[minute]:[second]"),
         ));
     tracing_subscriber::fmt().event_format(format).init();
@@ -375,7 +375,7 @@ fn main() -> Result<(), AppError> {
     debug!("Found git repository at {}", path.display());
 
     debug!("Doing an unconditional first pass in case there are existing changes to commit.");
-    handle_change(&repository, offset.clone());
+    handle_change(&repository, offset);
 
     let mut debouncer = new_debouncer(
         std::time::Duration::from_secs_f64(args.time_delay),
@@ -403,5 +403,7 @@ fn main() -> Result<(), AppError> {
     debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
     debug!("Set up filewatcher");
 
-    loop {}
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+    }
 }
