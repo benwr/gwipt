@@ -235,7 +235,23 @@ fn diff_lines(&git2::Diff) -> Result<Vec<&str>, std::str::Utf8Error> {
     lines
 }
 
-fn handle_change(repo: &Repository, offset: time::UtcOffset) {
+#[derive(Debug)]
+enum ChangeHandlingError {
+    GitError(git2::Error),
+}
+impl std::fmt::Display for ChangeHandlingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
+        }
+    }
+}
+
+impl std::error::Error for AppError {}
+
+fn handle_change(repo: &Repository, offset: time::UtcOffset) -> ChangeHandlingError {
+    let signature = repo.signature()?;
+
     prepare_wip_branch(repo)
         .map_err(|e| error!("Could not prepare wip branch: {}", e))
         .and_then(
