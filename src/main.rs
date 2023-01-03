@@ -330,13 +330,7 @@ fn main() -> Result<(), AppError> {
             format_description!("[hour]:[minute]:[second]"),
         ));
     tracing_subscriber::fmt().event_format(format).init();
-    let repository = match Repository::discover(".") {
-        Ok(r) => r,
-        Err(e) => {
-            error!("Git error: {}", &e);
-            return Err(AppError::GitError(e));
-        }
-    };
+    let repository = Repository::discover(".")?;
     let path = repository
         .path()
         .parent()
