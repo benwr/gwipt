@@ -263,15 +263,9 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
     }
     let diff_text = lines.join("");
     let message = get_message(sig.name()?.to_string(), sig.email()?.to_string(), difftext, offset)?;
-        Ok(message) => {
-            debug!("Got a commit message");
-            match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
-                Ok(id) => info!("Commit {}: {}", &id.to_string()[..6], message),
-                Err(e) => error!("Failed to commit to wip branch: {}", e),
-            }
-        }
-        Err(e) => error!("Could not get commit message: {}", e),
-    };
+    debug!("Got a commit message");
+    let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
+    info!("Commit {}: {}", &id.to_string()[..6], message);
 }
 
 fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
