@@ -259,6 +259,12 @@ impl std::convert::From<git2::Error> for ChangeHandlingError {
     }
 }
 
+impl std::convert::From<CommitMessageError> for ChangeHandlingError {
+    fn from(e: CommitMessageError) -> Self {
+        AppError::CommitMessageError(e)
+    }
+}
+
 fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
     let sig = repo.signature()?;
     let name = prepare_wip_branch(repo)?;
