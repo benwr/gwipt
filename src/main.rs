@@ -217,7 +217,7 @@ fn try_commit(
     )
 }
 
-fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<&'a str>, std::str::Utf8Error> {
+fn diff_lines<'a>(diff: &'a git2::Diff) -> Vec<&'a str> {
     let mut lines = vec![String::from("\n\n")];
     diff.print(git2::DiffFormat::Patch, |_, _, l| {
         let line = if ['+', '-', ' '].contains(&l.origin()) {
@@ -276,7 +276,7 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
     let sig = repo.signature()?;
     let name = prepare_wip_branch(repo)?;
     let diff = prepare_diff(repo, &name)?;
-    let lines = diff_lines(&diff)?;
+    let lines = diff_lines(&diff);
     if lines.len() <= 1 {
         debug!("Empty diff");
         return Ok(());
