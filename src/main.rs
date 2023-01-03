@@ -237,19 +237,19 @@ fn diff_lines(diff: &git2::Diff) -> Result<Vec<String>, git2::Error> {
 
 #[derive(Debug)]
 enum ChangeHandlingError {
-    GitError(git2::Error),
-    CommitMessageError(CommitMessageError),
-    Utf8Error(std::str::Utf8Error),
+    Git(git2::Error),
+    CommitMessage(CommitMessageError),
+    Utf8(std::str::Utf8Error),
 }
 
 impl std::fmt::Display for ChangeHandlingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
-            ChangeHandlingError::CommitMessageError(e) => {
+            ChangeHandlingError::Git(e) => write!(f, "Git Error: {}", e),
+            ChangeHandlingError::CommitMessage(e) => {
                 write!(f, "Error getting commit message: {}", e)
             }
-            ChangeHandlingError::Utf8Error(e) => write!(f, "UTF-8 Error: {}", e),
+            ChangeHandlingError::Utf8(e) => write!(f, "UTF-8 Error: {}", e),
         }
     }
 }
@@ -258,19 +258,19 @@ impl std::error::Error for ChangeHandlingError {}
 
 impl std::convert::From<git2::Error> for ChangeHandlingError {
     fn from(e: git2::Error) -> Self {
-        ChangeHandlingError::GitError(e)
+        ChangeHandlingError::Git(e)
     }
 }
 
 impl std::convert::From<CommitMessageError> for ChangeHandlingError {
     fn from(e: CommitMessageError) -> Self {
-        ChangeHandlingError::CommitMessageError(e)
+        ChangeHandlingError::CommitMessage(e)
     }
 }
 
 impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
     fn from(e: std::str::Utf8Error) -> Self {
-        ChangeHandlingError::Utf8Error(e)
+        ChangeHandlingError::Utf8(e)
     }
 }
 
