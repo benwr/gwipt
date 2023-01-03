@@ -225,7 +225,7 @@ fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<String>, git2::Error> {
                 "{}{}",
                 l.origin(),
                 std::str::from_utf8(l.content()).unwrap_or("")
-                )
+            )
         } else {
             format!("{}", std::str::from_utf8(l.content()).unwrap_or(""))
         };
@@ -246,7 +246,9 @@ impl std::fmt::Display for ChangeHandlingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
-            ChangeHandlingError::CommitMessageError(e) => write!(f, "Error getting commit message: {}", e),
+            ChangeHandlingError::CommitMessageError(e) => {
+                write!(f, "Error getting commit message: {}", e)
+            }
             ChangeHandlingError::Utf8Error(e) => write!(f, "UTF-8 Error: {}", e),
         }
     }
@@ -272,7 +274,10 @@ impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
     }
 }
 
-fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
+fn handle_change_inner(
+    repo: &Repository,
+    offset: time::UtcOffset,
+) -> Result<(), ChangeHandlingError> {
     let sig = repo.signature()?;
     let name = prepare_wip_branch(repo)?;
     let diff = prepare_diff(repo, &name)?;
@@ -282,7 +287,12 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
         return Ok(());
     }
     let text = lines.join("");
-    let message = get_message(sig.name().unwrap_or("").to_string(), sig.email().unwrap_or("").to_string(), text, offset)?;
+    let message = get_message(
+        sig.name().unwrap_or("").to_string(),
+        sig.email().unwrap_or("").to_string(),
+        text,
+        offset,
+    )?;
     debug!("Got a commit message");
     let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
     info!("Commit {}: {}", &id.to_string()[..6], message);
