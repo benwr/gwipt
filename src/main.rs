@@ -292,6 +292,12 @@ impl std::fmt::Display for AppError {
 
 impl std::error::Error for AppError {}
 
+impl std::convert::From<git2::Error> for AppError {
+    fn from(e: git2::Error) -> Self {
+        AppError::GitError(e)
+    }
+}
+
 impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     fn from(e: notify_debouncer_mini::notify::Error) -> Self {
         AppError::NotifyError(e)
