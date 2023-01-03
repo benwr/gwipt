@@ -227,7 +227,7 @@ fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<&'a str>, std::str::Utf8Er
                 std::str::from_utf8(l.content()).unwrap()
                 )
         } else {
-            format!("{}", std::str::from_utf8(l.content())?)
+            format!("{}", std::str::from_utf8(l.content()).unwrap_or(""))
         };
         lines.push(line);
         true
