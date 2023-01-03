@@ -220,8 +220,12 @@ fn try_commit(
 fn handle_change(repo: &Repository, offset: time::UtcOffset) {
     prepare_wip_branch(repo)
         .map_err(|e| error!("Could not prepare wip branch: {}", e))
-        .and_then(|name| match prepare_diff(repo, &name) {
-            Ok((signature, diff)) => {
+        .and_then(
+            |name| prepare_diff(repo, &name)
+            .map_err(|e| error!("Could not prepare diff: {}", e))
+            .map(|(signature, diff)| (name, signature, diff)))
+        .and_then(|(name, signature, diff)|
+             {
                 let mut diff_lines = vec![String::from("\n\n")];
                 match diff.print(git2::DiffFormat::Patch, |_, _, l| {
                     let line = if ['+', '-', ' '].contains(&l.origin()) {
@@ -261,8 +265,7 @@ fn handle_change(repo: &Repository, offset: time::UtcOffset) {
                     Err(e) => error!("Could not extract diff lines: {}", e),
                 };
             }
-            Err(e) => error!("Could not prepare diff: {}", e),
-        })
+        )
 }
 
 #[derive(Debug)]
