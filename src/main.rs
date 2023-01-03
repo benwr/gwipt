@@ -260,7 +260,7 @@ fn handle_change(repo: &Repository, offset: time::UtcOffset) {
                 };
             }
             Err(e) => error!("Could not prepare diff: {}", e),
-        }).or_else(|e| error!("Could not prepare wip branch: {}", e));
+        }).map_err(|e| error!("Could not prepare wip branch: {}", e));
 }
 
 #[derive(Debug)]
