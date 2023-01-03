@@ -217,7 +217,7 @@ fn try_commit(
     )
 }
 
-fn diff_lines<'a>(diff: &'a git2::Diff) -> Vec<&'a str> {
+fn diff_lines<'a>(diff: &'a git2::Diff) -> Vec<String> {
     let mut lines = vec![String::from("\n\n")];
     diff.print(git2::DiffFormat::Patch, |_, _, l| {
         let line = if ['+', '-', ' '].contains(&l.origin()) {
