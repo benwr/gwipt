@@ -250,7 +250,7 @@ impl std::fmt::Display for ChangeHandlingError {
     }
 }
 
-impl std::error::Error for AppError {}
+impl std::error::Error for ChangeHandlingError {}
 
 fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
     let sig = repo.signature()?;
