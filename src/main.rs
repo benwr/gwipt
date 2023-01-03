@@ -265,6 +265,12 @@ impl std::convert::From<CommitMessageError> for ChangeHandlingError {
     }
 }
 
+impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
+    fn from(e: std::str::Utf8Error) -> Self {
+        AppError::Utf8Error(e)
+    }
+}
+
 fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
     let sig = repo.signature()?;
     let name = prepare_wip_branch(repo)?;
