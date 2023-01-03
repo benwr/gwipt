@@ -217,6 +217,24 @@ fn try_commit(
     )
 }
 
+fn diff_lines(&git2::Diff) -> Result<Vec<&str>, std::str::Utf8Error> {
+    let mut diff_lines = vec![String::from("\n\n")];
+    diff.print(git2::DiffFormat::Patch, |_, _, l| {
+        let line = if ['+', '-', ' '].contains(&l.origin()) {
+            format!(
+                "{}{}",
+                l.origin(),
+                std::str::from_utf8(l.content()).unwrap()
+                )
+        } else {
+            format!("{}", std::str::from_utf8(l.content())?)
+        };
+        diff_lines.push(line);
+        true
+    });
+    diff_lines
+}
+
 fn handle_change(repo: &Repository, offset: time::UtcOffset) {
     prepare_wip_branch(repo)
         .map_err(|e| error!("Could not prepare wip branch: {}", e))
@@ -226,20 +244,7 @@ fn handle_change(repo: &Repository, offset: time::UtcOffset) {
             .map(|(signature, diff)| (name, signature, diff)))
         .and_then(|(name, signature, diff)|
              {
-                let mut diff_lines = vec![String::from("\n\n")];
-                match diff.print(git2::DiffFormat::Patch, |_, _, l| {
-                    let line = if ['+', '-', ' '].contains(&l.origin()) {
-                        format!(
-                            "{}{}",
-                            l.origin(),
-                            std::str::from_utf8(l.content()).unwrap()
-                        )
-                    } else {
-                        format!("{}", std::str::from_utf8(l.content()).unwrap())
-                    };
-                    diff_lines.push(line);
-                    true
-                }) {
+                {
                     Ok(()) => {
                         if diff_lines.len() <= 1 {
                             debug!("Empty diff");
