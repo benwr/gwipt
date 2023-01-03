@@ -400,5 +400,5 @@ fn main() -> Result<(), AppError> {
     debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
     debug!("Set up filewatcher");
 
-    loop {}
+    loop {std::thread::sleep(std::time::Duration::SECOND);}
 }
