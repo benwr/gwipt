@@ -79,7 +79,7 @@ impl std::convert::From<time::error::Format> for CommitMessageError {
     }
 }
 
-fn get_commit_message(
+fn get_message(
     name: String,
     email: String,
     diff: String,
@@ -90,15 +90,14 @@ fn get_commit_message(
         "Author: {} <{}>\nDate:   {}",
         name,
         email,
-        now.format(format_description!("[weekday repr:short] [month repr:short] [day padding:none] [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"))?
+        now.format(format_description!(
+            "[weekday repr:short] [month repr:short] [day padding:none] \
+                [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"
+        ))?
     );
 
     debug!("diff prefix: {}", &prefix);
-    let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
-        k
-    } else {
-        return Err(CommitMessageError::MissingApiKey);
-    };
+    let key = std::env::var("OPENAI_API_KEY").map_err(|_| CommitMessageError::MissingApiKey)?;
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
     let request = OpenAiRequest {
@@ -149,17 +148,9 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
     let head_commit = head_ref.peel_to_commit()?;
     let head_tree = head_commit.tree()?;
     let head_commit_id = head_commit.id();
-    let existing_wip_branch =
-        if let Ok(branch) = repo.find_branch(&wip_branch_name, git2::BranchType::Local) {
-            branch
-        } else {
-            debug!(
-                "Branching to {} with {}",
-                &wip_branch_name,
-                head_commit.id()
-            );
-            repo.branch(&wip_branch_name, &head_commit, true)?
-        };
+    let existing_wip_branch = repo
+        .find_branch(&wip_branch_name, git2::BranchType::Local)
+        .or_else(|_| repo.branch(&wip_branch_name, &head_commit, true))?;
     let existing_wip_commit = existing_wip_branch.get().peel_to_commit()?;
     let existing_wip_commit_id = existing_wip_commit.id();
     let me = repo.signature()?;
@@ -184,7 +175,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
 fn prepare_diff<'a, 'b>(
     repo: &'a Repository,
     wip_branch_name: &'b str,
-) -> Result<(git2::Signature<'a>, git2::Diff<'a>), git2::Error> {
+) -> Result<git2::Diff<'a>, git2::Error> {
     let wip_branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
     let wip_tree = wip_branch.get().peel_to_tree()?;
     let mut diff_options = git2::DiffOptions::new();
@@ -196,7 +187,7 @@ fn prepare_diff<'a, 'b>(
         .show_untracked_content(true);
     let diff = repo.diff_tree_to_workdir(Some(&wip_tree), Some(&mut diff_options))?;
 
-    Ok((repo.signature()?, diff))
+    Ok(diff)
 }
 
 fn try_commit(
@@ -226,54 +217,90 @@ fn try_commit(
     )
 }
 
-fn handle_change(repo: &Repository, offset: time::UtcOffset) {
-    match prepare_wip_branch(repo) {
-        Ok(name) => match prepare_diff(repo, &name) {
-            Ok((signature, diff)) => {
-                let mut diff_lines = vec![String::from("\n\n")];
-                match diff.print(git2::DiffFormat::Patch, |_, _, l| {
-                    let line = if ['+', '-', ' '].contains(&l.origin()) {
-                        format!(
-                            "{}{}",
-                            l.origin(),
-                            std::str::from_utf8(l.content()).unwrap()
-                        )
-                    } else {
-                        format!("{}", std::str::from_utf8(l.content()).unwrap())
-                    };
-                    diff_lines.push(line);
-                    true
-                }) {
-                    Ok(()) => {
-                        if diff_lines.len() <= 1 {
-                            debug!("Empty diff");
-                            return;
-                        }
-                        let difftext = diff_lines.join("");
-                        match get_commit_message(
-                            signature.name().unwrap().to_string(),
-                            signature.email().unwrap().to_string(),
-                            difftext,
-                            offset,
-                        ) {
-                            Ok(message) => {
-                                debug!("Got a commit message");
-                                match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
-                                    Ok(id) => info!("Commit {}: {}", &id.to_string()[..6], message),
-                                    Err(e) => error!("Failed to commit to wip branch: {}", e),
-                                }
-                            }
-                            Err(e) => error!("Could not get commit message: {}", e),
-                        }
-                    }
-                    Err(e) => error!("Could not extract diff lines: {}", e),
-                };
+fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<String>, git2::Error> {
+    let mut lines = vec![String::from("\n\n")];
+    diff.print(git2::DiffFormat::Patch, |_, _, l| {
+        let line = if ['+', '-', ' '].contains(&l.origin()) {
+            format!(
+                "{}{}",
+                l.origin(),
+                std::str::from_utf8(l.content()).unwrap_or("")
+            )
+        } else {
+            format!("{}", std::str::from_utf8(l.content()).unwrap_or(""))
+        };
+        lines.push(line);
+        true
+    })?;
+    Ok(lines)
+}
+
+#[derive(Debug)]
+enum ChangeHandlingError {
+    GitError(git2::Error),
+    CommitMessageError(CommitMessageError),
+    Utf8Error(std::str::Utf8Error),
+}
+
+impl std::fmt::Display for ChangeHandlingError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
+            ChangeHandlingError::CommitMessageError(e) => {
+                write!(f, "Error getting commit message: {}", e)
             }
-            Err(e) => error!("Could not prepare diff: {}", e),
-        },
-        Err(e) => error!("Could not prepare wip branch: {}", e),
+            ChangeHandlingError::Utf8Error(e) => write!(f, "UTF-8 Error: {}", e),
+        }
     }
-    debug!("Change handler exit");
+}
+
+impl std::error::Error for ChangeHandlingError {}
+
+impl std::convert::From<git2::Error> for ChangeHandlingError {
+    fn from(e: git2::Error) -> Self {
+        ChangeHandlingError::GitError(e)
+    }
+}
+
+impl std::convert::From<CommitMessageError> for ChangeHandlingError {
+    fn from(e: CommitMessageError) -> Self {
+        ChangeHandlingError::CommitMessageError(e)
+    }
+}
+
+impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
+    fn from(e: std::str::Utf8Error) -> Self {
+        ChangeHandlingError::Utf8Error(e)
+    }
+}
+
+fn handle_change_inner(
+    repo: &Repository,
+    offset: time::UtcOffset,
+) -> Result<(), ChangeHandlingError> {
+    let sig = repo.signature()?;
+    let name = prepare_wip_branch(repo)?;
+    let diff = prepare_diff(repo, &name)?;
+    let lines = diff_lines(&diff)?;
+    if lines.len() <= 1 {
+        debug!("Empty diff");
+        return Ok(());
+    }
+    let text = lines.join("");
+    let message = get_message(
+        sig.name().unwrap_or("").to_string(),
+        sig.email().unwrap_or("").to_string(),
+        text,
+        offset,
+    )?;
+    debug!("Got a commit message");
+    let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
+    info!("Commit {}: {}", &id.to_string()[..6], message);
+    Ok(())
+}
+
+fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
+    handle_change_inner(repo, utc_offset).unwrap_or_else(|e| error!("{}", e))
 }
 
 #[derive(Debug)]
@@ -294,6 +321,12 @@ impl std::fmt::Display for AppError {
 }
 
 impl std::error::Error for AppError {}
+
+impl std::convert::From<git2::Error> for AppError {
+    fn from(e: git2::Error) -> Self {
+        AppError::GitError(e)
+    }
+}
 
 impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     fn from(e: notify_debouncer_mini::notify::Error) -> Self {
@@ -333,13 +366,7 @@ fn main() -> Result<(), AppError> {
             format_description!("[hour]:[minute]:[second]"),
         ));
     tracing_subscriber::fmt().event_format(format).init();
-    let repository = match Repository::discover(".") {
-        Ok(r) => r,
-        Err(e) => {
-            error!("Git error: {}", &e);
-            return Err(AppError::GitError(e));
-        }
-    };
+    let repository = Repository::discover(".")?;
     let path = repository
         .path()
         .parent()
@@ -355,7 +382,7 @@ fn main() -> Result<(), AppError> {
         None,
         move |res: DebounceEventResult| match res {
             Ok(events) => {
-                debug!("{} events", events.len());
+                debug!("{} file events", events.len());
                 let any_non_git_files = events.iter().any(|e| {
                     let p = &e.path;
                     !p.components().any(|part| {
@@ -374,7 +401,6 @@ fn main() -> Result<(), AppError> {
     )?;
 
     debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
-
     debug!("Set up filewatcher");
 
     loop {}
