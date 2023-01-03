@@ -79,7 +79,7 @@ impl std::convert::From<time::error::Format> for CommitMessageError {
     }
 }
 
-fn get_commit_message(
+fn get_message(
     name: String,
     email: String,
     diff: String,
@@ -262,7 +262,7 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
         return;
     }
     let diff_text = lines.join("");
-    match get_commit_message(sig.name()?.to_string(), sig.email()?.to_string(), difftext, offset) {
+    let message = get_message(sig.name()?.to_string(), sig.email()?.to_string(), difftext, offset)?;
         Ok(message) => {
             debug!("Got a commit message");
             match try_commit(repo, &name, &(String::from("wip: ") + &message)) {
