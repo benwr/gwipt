@@ -275,7 +275,7 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
         return Ok(());
     }
     let text = lines.join("");
-    let message = get_message(sig.name()?.to_string(), sig.email()?.to_string(), text, offset)?;
+    let message = get_message(sig.name().unwrap_or("").to_string(), sig.email().unwrap_or("").to_string(), text, offset)?;
     debug!("Got a commit message");
     let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
     info!("Commit {}: {}", &id.to_string()[..6], message);
