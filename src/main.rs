@@ -266,6 +266,7 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
     debug!("Got a commit message");
     let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
     info!("Commit {}: {}", &id.to_string()[..6], message);
+    Ok(())
 }
 
 fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
