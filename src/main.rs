@@ -270,7 +270,7 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
 }
 
 fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
-    handle_change_inner.unwrap_or_else(|e| error!("{}", e))
+    handle_change_inner(repo, utc_offset).unwrap_or_else(|e| error!("{}", e))
 }
 
 #[derive(Debug)]
