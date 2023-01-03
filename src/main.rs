@@ -261,8 +261,8 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
         debug!("Empty diff");
         return;
     }
-    let diff_text = lines.join("");
-    let message = get_message(sig.name()?.to_string(), sig.email()?.to_string(), diff_text, offset)?;
+    let text = lines.join("");
+    let message = get_message(sig.name()?.to_string(), sig.email()?.to_string(), text, offset)?;
     debug!("Got a commit message");
     let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
     info!("Commit {}: {}", &id.to_string()[..6], message);
