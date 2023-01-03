@@ -259,7 +259,7 @@ fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(),
     let lines = diff_lines(diff)?;
     if lines.len() <= 1 {
         debug!("Empty diff");
-        return;
+        return Ok(());
     }
     let text = lines.join("");
     let message = get_message(sig.name()?.to_string(), sig.email()?.to_string(), text, offset)?;
