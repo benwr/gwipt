@@ -305,17 +305,17 @@ fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
 
 #[derive(Debug)]
 enum AppError {
-    GitError(git2::Error),
-    NotifyError(notify_debouncer_mini::notify::Error),
-    TimeError(time::error::IndeterminateOffset),
+    Git(git2::Error),
+    Notify(notify_debouncer_mini::notify::Error),
+    Time(time::error::IndeterminateOffset),
 }
 
 impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            AppError::GitError(e) => write!(f, "Git Error: {}", e),
-            AppError::NotifyError(e) => write!(f, "File watcher error: {}", e),
-            AppError::TimeError(e) => write!(f, "Time error: {}", e),
+            AppError::Git(e) => write!(f, "Git Error: {}", e),
+            AppError::Notify(e) => write!(f, "File watcher error: {}", e),
+            AppError::Time(e) => write!(f, "Time error: {}", e),
         }
     }
 }
@@ -324,19 +324,19 @@ impl std::error::Error for AppError {}
 
 impl std::convert::From<git2::Error> for AppError {
     fn from(e: git2::Error) -> Self {
-        AppError::GitError(e)
+        AppError::Git(e)
     }
 }
 
 impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     fn from(e: notify_debouncer_mini::notify::Error) -> Self {
-        AppError::NotifyError(e)
+        AppError::Notify(e)
     }
 }
 
 impl std::convert::From<time::error::IndeterminateOffset> for AppError {
     fn from(e: time::error::IndeterminateOffset) -> Self {
-        AppError::TimeError(e)
+        AppError::Time(e)
     }
 }
 
