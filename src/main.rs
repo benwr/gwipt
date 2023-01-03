@@ -143,7 +143,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
     }
     let head_branch_name = head_ref
         .shorthand()
-        .ok_or(git2::Error::from_str("Could not get branch name"))?;
+        .ok_or_else(|| git2::Error::from_str("Could not get branch name"))?;
     let wip_branch_name = String::from("wip/") + &head_branch_name;
     let head_commit = head_ref.peel_to_commit()?;
     let head_tree = head_commit.tree()?;
