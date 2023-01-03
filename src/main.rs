@@ -255,7 +255,7 @@ impl std::error::Error for AppError {}
 fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
     let sig = repo.signature()?;
     let name = prepare_wip_branch(repo)?;
-    let diff = prepare_diff(repo. &name)?;
+    let diff = prepare_diff(repo, &name)?;
     let lines = diff_lines(diff)?;
     if lines.len() <= 1 {
         debug!("Empty diff");
