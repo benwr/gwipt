@@ -361,10 +361,7 @@ fn main() -> Result<(), AppError> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(OffsetTime::new(
-            offset.clone(),
-            format_description!("[hour]:[minute]:[second]"),
-        ));
+        .with_timer(OffsetTime::new(offset, format_description!("[hour]:[minute]:[second]")));
     tracing_subscriber::fmt().event_format(format).init();
     let repository = Repository::discover(".")?;
     let path = repository
@@ -375,7 +372,7 @@ fn main() -> Result<(), AppError> {
     debug!("Found git repository at {}", path.display());
 
     debug!("Doing an unconditional first pass in case there are existing changes to commit.");
-    handle_change(&repository, offset.clone());
+    handle_change(&repository, offset);
 
     let mut debouncer = new_debouncer(
         std::time::Duration::from_secs_f64(args.time_delay),
