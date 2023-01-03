@@ -175,7 +175,7 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
 fn prepare_diff<'a, 'b>(
     repo: &'a Repository,
     wip_branch_name: &'b str,
-) -> Result<(git2::Signature<'a>, git2::Diff<'a>), git2::Error> {
+) -> Result<git2::Diff<'a>, git2::Error> {
     let wip_branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
     let wip_tree = wip_branch.get().peel_to_tree()?;
     let mut diff_options = git2::DiffOptions::new();
@@ -187,7 +187,7 @@ fn prepare_diff<'a, 'b>(
         .show_untracked_content(true);
     let diff = repo.diff_tree_to_workdir(Some(&wip_tree), Some(&mut diff_options))?;
 
-    Ok((repo.signature()?, diff))
+    Ok(diff)
 }
 
 fn try_commit(
@@ -218,7 +218,7 @@ fn try_commit(
 }
 
 fn diff_lines(&git2::Diff) -> Result<Vec<&str>, std::str::Utf8Error> {
-    let mut diff_lines = vec![String::from("\n\n")];
+    let mut lines = vec![String::from("\n\n")];
     diff.print(git2::DiffFormat::Patch, |_, _, l| {
         let line = if ['+', '-', ' '].contains(&l.origin()) {
             format!(
@@ -229,10 +229,10 @@ fn diff_lines(&git2::Diff) -> Result<Vec<&str>, std::str::Utf8Error> {
         } else {
             format!("{}", std::str::from_utf8(l.content())?)
         };
-        diff_lines.push(line);
+        lines.push(line);
         true
     });
-    diff_lines
+    lines
 }
 
 fn handle_change(repo: &Repository, offset: time::UtcOffset) {
@@ -243,6 +243,7 @@ fn handle_change(repo: &Repository, offset: time::UtcOffset) {
             .map_err(|e| error!("Could not prepare diff: {}", e))
             .map(|(signature, diff)| (name, signature, diff)))
         .and_then(|(name, signature, diff)|
+                  diff_lines(diff)
              {
                 {
                     Ok(()) => {
