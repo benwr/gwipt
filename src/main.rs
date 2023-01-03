@@ -238,6 +238,7 @@ fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<&'a str>, std::str::Utf8Er
 #[derive(Debug)]
 enum ChangeHandlingError {
     GitError(git2::Error),
+    CommitMessageError(CommitMessageError),
     Utf8Error(std::str::Utf8Error),
 }
 
@@ -257,6 +258,7 @@ impl std::convert::From<git2::Error> for ChangeHandlingError {
         AppError::GitError(e)
     }
 }
+
 fn handle_change_inner(repo: &Repository, offset: time::UtcOffset) -> Result<(), ChangeHandlingError> {
     let sig = repo.signature()?;
     let name = prepare_wip_branch(repo)?;
