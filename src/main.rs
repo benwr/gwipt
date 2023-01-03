@@ -90,15 +90,14 @@ fn get_commit_message(
         "Author: {} <{}>\nDate:   {}",
         name,
         email,
-        now.format(format_description!("[weekday repr:short] [month repr:short] [day padding:none] [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"))?
+        now.format(format_description!(
+            "[weekday repr:short] [month repr:short] [day padding:none] \
+                [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"
+        ))?
     );
 
     debug!("diff prefix: {}", &prefix);
-    let key = if let Ok(k) = std::env::var("OPENAI_API_KEY") {
-        k
-    } else {
-        return Err(CommitMessageError::MissingApiKey);
-    };
+    let key = std::env::var("OPENAI_API_KEY").map_err(|_| CommitMessageError::MissingApiKey)?;
     let client = reqwest::blocking::Client::new();
     let prefixlen = prefix.len();
     let request = OpenAiRequest {
@@ -149,17 +148,12 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
     let head_commit = head_ref.peel_to_commit()?;
     let head_tree = head_commit.tree()?;
     let head_commit_id = head_commit.id();
-    let existing_wip_branch =
-        if let Ok(branch) = repo.find_branch(&wip_branch_name, git2::BranchType::Local) {
-            branch
-        } else {
-            debug!(
-                "Branching to {} with {}",
-                &wip_branch_name,
-                head_commit.id()
-            );
-            repo.branch(&wip_branch_name, &head_commit, true)?
-        };
+    let existing_wip_branch = repo
+        .find_branch(&wip_branch_name, git2::BranchType::Local)
+        .or_else(|_| {
+            debug!("Branching to {} with {}", &wip_branch_name, head_commit.id());
+            repo.branch(&wip_branch_name, &head_commit, true)
+        })?;
     let existing_wip_commit = existing_wip_branch.get().peel_to_commit()?;
     let existing_wip_commit_id = existing_wip_commit.id();
     let me = repo.signature()?;
