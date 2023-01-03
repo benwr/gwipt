@@ -238,7 +238,7 @@ fn diff_lines<'a>(diff: &'a git2::Diff) -> Result<Vec<&'a str>, std::str::Utf8Er
 #[derive(Debug)]
 enum ChangeHandlingError {
     GitError(git2::Error),
-    Utf8Error(str::Utf8Error),
+    Utf8Error(std::str::Utf8Error),
 }
 
 impl std::fmt::Display for ChangeHandlingError {
