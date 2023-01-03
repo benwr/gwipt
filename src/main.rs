@@ -246,6 +246,7 @@ impl std::fmt::Display for ChangeHandlingError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             ChangeHandlingError::GitError(e) => write!(f, "Git Error: {}", e),
+            ChangeHandlingError::CommitMessageError(e) => write!(f, "Error getting commit message: {}", e),
             ChangeHandlingError::Utf8Error(e) => write!(f, "UTF-8 Error: {}", e),
         }
     }
