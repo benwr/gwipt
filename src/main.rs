@@ -361,7 +361,10 @@ fn main() -> Result<(), AppError> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
-        .with_timer(OffsetTime::new(offset, format_description!("[hour]:[minute]:[second]")));
+        .with_timer(OffsetTime::new(
+            offset,
+            format_description!("[hour]:[minute]:[second]"),
+        ));
     tracing_subscriber::fmt().event_format(format).init();
     let repository = Repository::discover(".")?;
     let path = repository
@@ -400,5 +403,7 @@ fn main() -> Result<(), AppError> {
     debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
     debug!("Set up filewatcher");
 
-    loop {std::thread::sleep(std::time::Duration::from_secs(10));}
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(10));
+    }
 }
