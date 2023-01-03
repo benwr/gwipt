@@ -382,7 +382,7 @@ fn main() -> Result<(), AppError> {
         None,
         move |res: DebounceEventResult| match res {
             Ok(events) => {
-                debug!("{} events", events.len());
+                debug!("{} file events", events.len());
                 let any_non_git_files = events.iter().any(|e| {
                     let p = &e.path;
                     !p.components().any(|part| {
@@ -401,7 +401,6 @@ fn main() -> Result<(), AppError> {
     )?;
 
     debouncer.watcher().watch(&path, RecursiveMode::Recursive)?;
-
     debug!("Set up filewatcher");
 
     loop {}
