@@ -256,19 +256,19 @@ impl std::error::Error for ChangeHandlingError {}
 
 impl std::convert::From<git2::Error> for ChangeHandlingError {
     fn from(e: git2::Error) -> Self {
-        AppError::GitError(e)
+        ChangeHandlingError::GitError(e)
     }
 }
 
 impl std::convert::From<CommitMessageError> for ChangeHandlingError {
     fn from(e: CommitMessageError) -> Self {
-        AppError::CommitMessageError(e)
+        ChangeHandlingError::CommitMessageError(e)
     }
 }
 
 impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
     fn from(e: std::str::Utf8Error) -> Self {
-        AppError::Utf8Error(e)
+        ChangeHandlingError::Utf8Error(e)
     }
 }
 
