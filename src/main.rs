@@ -1,3 +1,4 @@
+use backoff::{retry, ExponentialBackoff};
 use clap::Parser;
 use git2::Repository;
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,7 @@ struct OpenAiResponse {
 
 #[derive(Debug)]
 enum CommitMessageError {
+    RateLimit(backoff::Error<reqwest::Error>),
     RequestError(reqwest::Error),
     TimeError(time::error::IndeterminateOffset),
     TimeFormatError(time::error::Format),
@@ -49,6 +51,7 @@ enum CommitMessageError {
 impl std::fmt::Display for CommitMessageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
+            CommitMessageError::RateLimit(e) => write!(f, "Rate limit error: {}", e),
             CommitMessageError::RequestError(e) => write!(f, "Request Error: {}", e),
             CommitMessageError::TimeError(e) => write!(f, "Time error: {}", e),
             CommitMessageError::TimeFormatError(e) => write!(f, "Time formatting error: {}", e),
@@ -60,6 +63,12 @@ impl std::fmt::Display for CommitMessageError {
 }
 
 impl std::error::Error for CommitMessageError {}
+
+impl std::convert::From<backoff::Error<reqwest::Error>> for CommitMessageError {
+    fn from(e: backoff::Error<reqwest::Error>) -> Self {
+        CommitMessageError::RateLimit(e)
+    }
+}
 
 impl std::convert::From<reqwest::Error> for CommitMessageError {
     fn from(e: reqwest::Error) -> Self {
@@ -114,13 +123,22 @@ fn get_message(
         frequency_penalty: 0.0,
         presence_penalty: 0.0,
     };
-    let response = client
-        .post("https://api.openai.com/v1/completions")
-        .header("Content-Type", "application/json")
-        .header("Authorization", format!("Bearer {}", key))
-        .json(&request)
-        .send()?;
-    let response: OpenAiResponse = response.json()?;
+    let response_op = || {
+        let response = client
+            .post("https://api.openai.com/v1/completions")
+            .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {}", key))
+            .json(&request)
+            .send()?;
+        match response.error_for_status() {
+            Ok(r) => Ok(r),
+            Err(e) if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) => {
+                Err(backoff::Error::transient(e))
+            }
+            Err(e) => Err(backoff::Error::permanent(e)),
+        }
+    };
+    let response: OpenAiResponse = retry(ExponentialBackoff::default(), response_op)?.json()?;
 
     let issue_re =
         regex::Regex::new(r"(\(?(([Ff]ix(es)?)|([Cc]loses?))?\s*#\d+\)?)|([Mm]erge [Pp].*\n)")

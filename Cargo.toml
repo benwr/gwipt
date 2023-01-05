@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0 OR CC0-1.0"
 repository = "https://github.com/benwr/gwipt"
 
 [dependencies]
+backoff = "0.4.0"
 clap = { version = "4", features = ["derive"] }
 git2 = "0.15"
 notify-debouncer-mini = "0.2"
