@@ -1,3 +1,19 @@
+// Copyright 2023 The gwipt Authors, except as waived below
+// 
+// Licensed under the CC0 Universal 1.0 License (the "CC0 License"), or the Apache License, Version
+// 2.0 (the "Apache License"), at the licensee's discretion. You may obtain a copy of the CC0
+// License at
+// 
+//     https://creativecommons.org/publicdomain/zero/1.0/legalcode
+//
+// You may obtain a copy of the Apache License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0    
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied. See the License for the specific language governing permissions and limitations under the
+// License.
 use backoff::{retry, ExponentialBackoff};
 use clap::Parser;
 use git2::Repository;
