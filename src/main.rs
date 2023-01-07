@@ -199,8 +199,8 @@ fn prepare_diff<'a, 'b>(
     let mut diff_options = git2::DiffOptions::new();
     diff_options
         .minimal(true)
-        .context_lines(5)
         .include_untracked(true)
+        .context_lines(3) // default setting for diffs
         .recurse_untracked_dirs(true)
         .show_untracked_content(true);
     let diff = repo.diff_tree_to_workdir(Some(&wip_tree), Some(&mut diff_options))?;
