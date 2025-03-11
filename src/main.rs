@@ -13,65 +13,55 @@
 // Unless required by applicable law or agreed to in writing, this software is distributed on an
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // Licenses for the specific language governing permissions and limitations under the Licenses.
-use backoff::{retry, ExponentialBackoff};
+use backoff::ExponentialBackoff;
 use clap::Parser;
 use git2::Repository;
-use serde::{Deserialize, Serialize};
+use llm::chat::{Tool, ParametersSchema, ParameterProperty, ParameterType, ChatMessage, Role};
 use time::macros::format_description;
 use tracing::{debug, error, info};
 
-#[derive(Debug, Serialize)]
-struct OpenAiRequest {
-    model: String,
-    prompt: String,
-    suffix: String,
-    temperature: f64,
-    max_tokens: usize,
-    top_p: f64,
-    frequency_penalty: f64,
-    presence_penalty: f64,
-}
-
-#[derive(Debug, Deserialize)]
-struct ResponseChoice {
-    text: String,
-    // index: usize,
-    // finish_reason: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct Usage {
-    // completion_tokens: usize,
-    // total_tokens: usize,
-}
-#[derive(Debug, Deserialize)]
-struct OpenAiResponse {
-    // id: String,
-    // object: String,
-    // created: usize,
-    // model: String,
-    choices: Vec<ResponseChoice>,
-    // usage: Usage,
-}
+const COMMIT_TOOL: Tool = Tool {
+    name: "write_commit_message",
+    description: "Generate a commit message based on code changes",
+    parameters: ParametersSchema {
+        schema_type: "object".to_string(),
+        properties: [(
+            "message".to_string(),
+            ParameterProperty {
+                description: "Clear, concise one-line commit message summarizing the changes".to_string(),
+                schema_type: ParameterType::String,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        required: vec!["message".to_string()],
+    },
+};
 
 #[derive(Debug)]
 enum CommitMessageError {
-    RateLimit(backoff::Error<reqwest::Error>),
-    RequestError(reqwest::Error),
+    LLMError(llm::error::LLMError),
     TimeError(time::error::IndeterminateOffset),
     TimeFormatError(time::error::Format),
     MissingApiKey,
+    MissingToolCall,
+    InvalidToolArguments,
 }
 
 impl std::fmt::Display for CommitMessageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
-            CommitMessageError::RateLimit(e) => write!(f, "Rate limit error: {}", e),
-            CommitMessageError::RequestError(e) => write!(f, "Request Error: {}", e),
+            CommitMessageError::LLMError(e) => write!(f, "LLM error: {}", e),
             CommitMessageError::TimeError(e) => write!(f, "Time error: {}", e),
             CommitMessageError::TimeFormatError(e) => write!(f, "Time formatting error: {}", e),
             CommitMessageError::MissingApiKey => {
                 write!(f, "OPENAI_API_KEY environment variable is not set.")
+            },
+            CommitMessageError::MissingToolCall => {
+                write!(f, "LLM response did not include the expected tool call.")
+            },
+            CommitMessageError::InvalidToolArguments => {
+                write!(f, "LLM tool call had invalid or missing arguments.")
             }
         }
     }
@@ -79,15 +69,9 @@ impl std::fmt::Display for CommitMessageError {
 
 impl std::error::Error for CommitMessageError {}
 
-impl std::convert::From<backoff::Error<reqwest::Error>> for CommitMessageError {
-    fn from(e: backoff::Error<reqwest::Error>) -> Self {
-        CommitMessageError::RateLimit(e)
-    }
-}
-
-impl std::convert::From<reqwest::Error> for CommitMessageError {
-    fn from(e: reqwest::Error) -> Self {
-        CommitMessageError::RequestError(e)
+impl std::convert::From<llm::error::LLMError> for CommitMessageError {
+    fn from(e: llm::error::LLMError) -> Self {
+        CommitMessageError::LLMError(e)
     }
 }
 
@@ -110,61 +94,76 @@ fn get_message(
     offset: time::UtcOffset,
 ) -> Result<String, CommitMessageError> {
     let now = time::OffsetDateTime::now_utc().replace_offset(offset);
-    let prefix = format!(
-        "Author: {} <{}>\nDate:   {}",
-        name,
-        email,
+    let system_prompt = format!(
+        "You are a expert software engineer writing a git commit message.
+The user will provide a diff showing changes.
+Write a one-line commit message in the conventional style.
+The message should:
+- Start with a verb in imperative tense
+- Be under 72 characters
+- Use the format: <prefix>: <description>
+Common prefixes: fix, feat, docs, style, refactor, test, chore
+
+Author: {name} <{email}>
+Date: {}",
         now.format(format_description!(
             "[weekday repr:short] [month repr:short] [day padding:none] \
                 [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"
         ))?
     );
 
-    debug!("diff prefix: {}", &prefix);
+    debug!("Using system prompt: {}", &system_prompt);
     let key = std::env::var("OPENAI_API_KEY").map_err(|_| CommitMessageError::MissingApiKey)?;
-    let client = reqwest::blocking::Client::new();
-    let prefixlen = prefix.len();
-    let request = OpenAiRequest {
-        model: "text-davinci-003".to_string(),
-        prompt: prefix,
-        // The API limits are in terms of tokens. We are allowed (I think) 2048 tokens. Unfortunately,
-        // there's no easy way to calculate the number of tokens our prompt contains. This number
-        // is currently set to be quite conservative, but still large enough to contain most single-edit
-        // changes.
-        suffix: diff.chars().take((2048 - 100) * 2 - prefixlen).collect(),
-        temperature: 0.7,
-        max_tokens: 100,
-        top_p: 1.0,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
-    };
-    let response_op = || {
-        let response = client
-            .post("https://api.openai.com/v1/completions")
-            .header("Content-Type", "application/json")
-            .header("Authorization", format!("Bearer {}", key))
-            .json(&request)
-            .send()?;
-        match response.error_for_status() {
-            Ok(r) => Ok(r),
-            Err(e) if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) => {
-                Err(backoff::Error::transient(e))
-            }
-            Err(e) => Err(backoff::Error::permanent(e)),
-        }
-    };
-    let response: OpenAiResponse = retry(ExponentialBackoff::default(), response_op)?.json()?;
+    
+    let mut messages = vec![ChatMessage {
+        role: Role::System,
+        content: system_prompt,
+    }];
 
+    messages.push(ChatMessage {
+        role: Role::User,
+        content: format!("Diff:\n{}", diff),
+    });
+
+    let client = llm::backends::openai::OpenAI::new(
+        key,
+        Some("gpt-3.5-turbo".to_string()),
+        None,
+        Some(0.7),
+        None,
+        None,
+        None,
+        Some(1.0),
+        None,
+        None,
+        None,
+        Some(vec![COMMIT_TOOL.clone()]),
+        None
+    );
+
+    let response = client.chat_with_tools(&messages, Some(&[COMMIT_TOOL]))?;
+    
+    // Extract the tool call from the response
+    let tool_calls = response.tool_calls().ok_or(CommitMessageError::MissingToolCall)?;
+    let tool_call = tool_calls.iter()
+        .find(|tc| tc.function.name == "write_commit_message")
+        .ok_or(CommitMessageError::MissingToolCall)?;
+
+    // Parse the arguments as JSON
+    let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
+        .map_err(|_| CommitMessageError::InvalidToolArguments)?;
+    
+    let message = args.get("message")
+        .and_then(|v| v.as_str())
+        .ok_or(CommitMessageError::InvalidToolArguments)?;
+
+    // Filter out issue references and merge messages
     let issue_re =
         regex::Regex::new(r"(\(?(([Ff]ix(es)?)|([Cc]loses?))?\s*#\d+\)?)|([Mm]erge [Pp].*\n)")
             .expect("Regex failed to compile");
-    let commit_message = issue_re.replace_all(&response.choices[0].text, "");
-    Ok(commit_message
-        .trim()
-        .split('\n')
-        .next()
-        .expect("Result of split() had no entries!")
-        .to_string())
+    let commit_message = issue_re.replace_all(message, "");
+    
+    Ok(commit_message.trim().to_string())
 }
 
 fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
