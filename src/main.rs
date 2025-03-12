@@ -318,6 +318,7 @@ async fn handle_change() {
 enum AppError {
     Git(git2::Error),
     Notify(notify_debouncer_mini::notify::Error),
+    Time(time::error::IndeterminateOffset),
 }
 
 impl std::fmt::Display for AppError {
@@ -325,6 +326,7 @@ impl std::fmt::Display for AppError {
         match self {
             AppError::Git(e) => write!(f, "Git Error: {}", e),
             AppError::Notify(e) => write!(f, "File watcher error: {}", e),
+            AppError::Time(e) => write!(f, "Time error: {}", e),
         }
     }
 }
@@ -340,6 +342,12 @@ impl std::convert::From<git2::Error> for AppError {
 impl std::convert::From<notify_debouncer_mini::notify::Error> for AppError {
     fn from(e: notify_debouncer_mini::notify::Error) -> Self {
         AppError::Notify(e)
+    }
+}
+
+impl std::convert::From<time::error::IndeterminateOffset> for AppError {
+    fn from(e: time::error::IndeterminateOffset) -> Self {
+        AppError::Time(e)
     }
 }
 
