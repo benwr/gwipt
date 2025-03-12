@@ -18,10 +18,9 @@ use std::collections::HashMap;
 
 use clap::Parser;
 use git2::Repository;
-use llm::backends::openai::OpenAI;
 use llm::chat::{
-    ChatMessage, ChatProvider, ChatRole, FunctionTool, MessageType, ParameterProperty,
-    ParametersSchema, Tool,
+    backends::openai::OpenAI, ChatMessage, ChatProvider, ChatRole, FunctionTool, MessageType,
+    ParameterProperty, ParametersSchema, Tool,
 };
 use time::macros::format_description;
 use tracing::{debug, error, info};
