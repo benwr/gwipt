@@ -1,48 +1,60 @@
-// Copyright 2023 The gwipt Authors, except as waived below
-// 
+// Copyright 2023-2025 The gwipt Authors, except as waived below
+//
 // Licensed under the CC0 Universal 1.0 License (the "CC0 License"), or the Apache License, Version
 // 2.0 (the "Apache License"), at the licensee's discretion. You may obtain a copy of the CC0
 // License at
-// 
+//
 //     https://creativecommons.org/publicdomain/zero/1.0/legalcode
 //
 // You may obtain a copy of the Apache License at
 //
-//     https://www.apache.org/licenses/LICENSE-2.0    
+//     https://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, this software is distributed on an
 // "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 // Licenses for the specific language governing permissions and limitations under the Licenses.
-use backoff::ExponentialBackoff;
+
+use std::collections::HashMap;
+
 use clap::Parser;
 use git2::Repository;
-use llm::chat::{Tool, ParametersSchema, ParameterProperty, ParameterType, ChatMessage, Role};
+use llm::backends::openai::OpenAI;
+use llm::chat::{
+    ChatMessage, ChatProvider, ChatRole, FunctionTool, MessageType, ParameterProperty,
+    ParametersSchema, Tool,
+};
 use time::macros::format_description;
 use tracing::{debug, error, info};
 
-const COMMIT_TOOL: Tool = Tool {
-    name: "write_commit_message",
-    description: "Generate a commit message based on code changes",
-    parameters: ParametersSchema {
-        schema_type: "object".to_string(),
-        properties: [(
-            "message".to_string(),
-            ParameterProperty {
-                description: "Clear, concise one-line commit message summarizing the changes".to_string(),
-                schema_type: ParameterType::String,
+fn commit_tool() -> Tool {
+    const PARAM_NAME: &'static str = "message";
+    Tool {
+        tool_type: "function".to_string(),
+        function: FunctionTool {
+            name: "write_commit_message".to_string(),
+            description: "Generate a commit message based on code changes".to_string(),
+            parameters: ParametersSchema {
+                schema_type: "object".to_string(),
+                properties: HashMap::from([(
+                    PARAM_NAME.to_string(),
+                    ParameterProperty {
+                        property_type: "string".to_string(),
+                        description:
+                            "Clear, concise one-line commit message summarizing the changes"
+                                .to_string(),
+                        items: None,
+                        enum_list: None,
+                    },
+                )]),
+                required: vec![PARAM_NAME.to_string()],
             },
-        )]
-        .into_iter()
-        .collect(),
-        required: vec!["message".to_string()],
-    },
-};
+        },
+    }
+}
 
 #[derive(Debug)]
 enum CommitMessageError {
     LLMError(llm::error::LLMError),
-    TimeError(time::error::IndeterminateOffset),
-    TimeFormatError(time::error::Format),
     MissingApiKey,
     MissingToolCall,
     InvalidToolArguments,
@@ -52,14 +64,12 @@ impl std::fmt::Display for CommitMessageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         match self {
             CommitMessageError::LLMError(e) => write!(f, "LLM error: {}", e),
-            CommitMessageError::TimeError(e) => write!(f, "Time error: {}", e),
-            CommitMessageError::TimeFormatError(e) => write!(f, "Time formatting error: {}", e),
             CommitMessageError::MissingApiKey => {
                 write!(f, "OPENAI_API_KEY environment variable is not set.")
-            },
+            }
             CommitMessageError::MissingToolCall => {
                 write!(f, "LLM response did not include the expected tool call.")
-            },
+            }
             CommitMessageError::InvalidToolArguments => {
                 write!(f, "LLM tool call had invalid or missing arguments.")
             }
@@ -75,85 +85,60 @@ impl std::convert::From<llm::error::LLMError> for CommitMessageError {
     }
 }
 
-impl std::convert::From<time::error::IndeterminateOffset> for CommitMessageError {
-    fn from(e: time::error::IndeterminateOffset) -> Self {
-        CommitMessageError::TimeError(e)
-    }
-}
-
-impl std::convert::From<time::error::Format> for CommitMessageError {
-    fn from(e: time::error::Format) -> Self {
-        CommitMessageError::TimeFormatError(e)
-    }
-}
-
-fn get_message(
-    name: String,
-    email: String,
-    diff: String,
-    offset: time::UtcOffset,
-) -> Result<String, CommitMessageError> {
-    let now = time::OffsetDateTime::now_utc().replace_offset(offset);
-    let system_prompt = format!(
-        "You are a expert software engineer writing a git commit message.
+const SYSTEM_PROMPT: &'static str =
+    "You are an expert software engineer writing a git commit message.
 The user will provide a diff showing changes.
 Write a one-line commit message in the conventional style.
 The message should:
 - Start with a verb in imperative tense
 - Be under 72 characters
-- Use the format: <prefix>: <description>
-Common prefixes: fix, feat, docs, style, refactor, test, chore
+";
 
-Author: {name} <{email}>
-Date: {}",
-        now.format(format_description!(
-            "[weekday repr:short] [month repr:short] [day padding:none] \
-                [hour]:[minute]:[second] [year] [offset_hour sign:mandatory][offset_minute]"
-        ))?
-    );
-
-    debug!("Using system prompt: {}", &system_prompt);
+async fn get_message(diff: String) -> Result<String, CommitMessageError> {
+    debug!("Using system prompt: {}", &SYSTEM_PROMPT);
     let key = std::env::var("OPENAI_API_KEY").map_err(|_| CommitMessageError::MissingApiKey)?;
-    
-    let mut messages = vec![ChatMessage {
-        role: Role::System,
-        content: system_prompt,
+
+    let messages = vec![ChatMessage {
+        role: ChatRole::User,
+        message_type: MessageType::Text,
+        content: format!("Diff:\n{}", diff),
     }];
 
-    messages.push(ChatMessage {
-        role: Role::User,
-        content: format!("Diff:\n{}", diff),
-    });
-
-    let client = llm::backends::openai::OpenAI::new(
-        key,
-        Some("gpt-3.5-turbo".to_string()),
-        None,
-        Some(0.7),
-        None,
-        None,
-        None,
-        Some(1.0),
-        None,
-        None,
-        None,
-        Some(vec![COMMIT_TOOL.clone()]),
-        None
+    let client = OpenAI::new(
+        key,                             // api_key
+        Some("gpt-4o".to_string()),      // model
+        None,                            // max_tokens
+        None,                            // temperature
+        Some(60),                        // timeout_seconds
+        Some(SYSTEM_PROMPT.to_string()), // system
+        None,                            // stream
+        None,                            // top_p
+        None,                            // top_k
+        None,                            // embedding_encoding_format
+        None,                            // embedding_dimensions
+        Some(vec![commit_tool()]),       // tools
+        None,                            // reasoning_effort
     );
 
-    let response = client.chat_with_tools(&messages, Some(&[COMMIT_TOOL]))?;
-    
+    let response = client
+        .chat_with_tools(&messages, Some(&[commit_tool()]))
+        .await?;
+
     // Extract the tool call from the response
-    let tool_calls = response.tool_calls().ok_or(CommitMessageError::MissingToolCall)?;
-    let tool_call = tool_calls.iter()
+    let tool_calls = response
+        .tool_calls()
+        .ok_or(CommitMessageError::MissingToolCall)?;
+    let tool_call = tool_calls
+        .iter()
         .find(|tc| tc.function.name == "write_commit_message")
         .ok_or(CommitMessageError::MissingToolCall)?;
 
     // Parse the arguments as JSON
     let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
         .map_err(|_| CommitMessageError::InvalidToolArguments)?;
-    
-    let message = args.get("message")
+
+    let message = args
+        .get("message")
         .and_then(|v| v.as_str())
         .ok_or(CommitMessageError::InvalidToolArguments)?;
 
@@ -162,7 +147,7 @@ Date: {}",
         regex::Regex::new(r"(\(?(([Ff]ix(es)?)|([Cc]loses?))?\s*#\d+\)?)|([Mm]erge [Pp].*\n)")
             .expect("Regex failed to compile");
     let commit_message = issue_re.replace_all(message, "");
-    
+
     Ok(commit_message.trim().to_string())
 }
 
@@ -306,11 +291,7 @@ impl std::convert::From<std::str::Utf8Error> for ChangeHandlingError {
     }
 }
 
-fn handle_change_inner(
-    repo: &Repository,
-    offset: time::UtcOffset,
-) -> Result<(), ChangeHandlingError> {
-    let sig = repo.signature()?;
+async fn handle_change_inner(repo: &Repository) -> Result<(), ChangeHandlingError> {
     let name = prepare_wip_branch(repo)?;
     let diff = prepare_diff(repo, &name)?;
     let lines = diff_lines(&diff)?;
@@ -319,20 +300,18 @@ fn handle_change_inner(
         return Ok(());
     }
     let text = lines.join("");
-    let message = get_message(
-        sig.name().unwrap_or("").to_string(),
-        sig.email().unwrap_or("").to_string(),
-        text,
-        offset,
-    )?;
+    let message = get_message(text).await?;
     debug!("Got a commit message");
     let id = try_commit(repo, &name, &(String::from("wip: ") + &message))?;
     info!("Commit {}: {}", &id.to_string()[..6], message);
     Ok(())
 }
 
-fn handle_change(repo: &Repository, utc_offset: time::UtcOffset) {
-    handle_change_inner(repo, utc_offset).unwrap_or_else(|e| error!("{}", e))
+async fn handle_change() {
+    let repo = Repository::discover(".").unwrap();
+    handle_change_inner(&repo)
+        .await
+        .unwrap_or_else(|e| error!("{}", e))
 }
 
 #[derive(Debug)]
@@ -407,7 +386,8 @@ fn main() -> Result<(), AppError> {
     debug!("Found git repository at {}", path.display());
 
     debug!("Doing an unconditional first pass in case there are existing changes to commit.");
-    handle_change(&repository, offset);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(handle_change());
 
     let mut debouncer = new_debouncer(
         std::time::Duration::from_secs_f64(args.time_delay),
@@ -423,7 +403,7 @@ fn main() -> Result<(), AppError> {
                 });
                 if any_non_git_files {
                     debug!("Found files not in a .git directory");
-                    handle_change(&repository, offset);
+                    rt.block_on(handle_change());
                 } else {
                     debug!("No files outside of .git changed");
                 }

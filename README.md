@@ -1,7 +1,7 @@
 # gwipt
 
 Automatic work-in-progress commits with descriptive commit messages generated
-by GPT-3 Codex
+by LLMs.
 
 Never again worry about the tension between "commit early, commit often" and
 "every commit needs a commit message". All you need is an OpenAI API key, and
