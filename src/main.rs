@@ -27,7 +27,7 @@ use time::macros::format_description;
 use tracing::{debug, error, info};
 
 fn commit_tool() -> Tool {
-    const PARAM_NAME: &'static str = "message";
+    const PARAM_NAME: &str = "message";
     Tool {
         tool_type: "function".to_string(),
         function: FunctionTool {
@@ -85,8 +85,7 @@ impl std::convert::From<llm::error::LLMError> for CommitMessageError {
     }
 }
 
-const SYSTEM_PROMPT: &'static str =
-    "You are an expert software engineer writing a git commit message.
+const SYSTEM_PROMPT: &str = "You are an expert software engineer writing a git commit message.
 The user will provide a diff showing changes.
 Write a one-line commit message in the conventional style.
 The message should:
@@ -189,9 +188,9 @@ fn prepare_wip_branch(repo: &Repository) -> Result<String, git2::Error> {
     Ok(wip_branch_name)
 }
 
-fn prepare_diff<'a, 'b>(
+fn prepare_diff<'a>(
     repo: &'a Repository,
-    wip_branch_name: &'b str,
+    wip_branch_name: &str,
 ) -> Result<git2::Diff<'a>, git2::Error> {
     let wip_branch = repo.find_branch(wip_branch_name, git2::BranchType::Local)?;
     let wip_tree = wip_branch.get().peel_to_tree()?;
