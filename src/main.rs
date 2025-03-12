@@ -23,6 +23,7 @@ use llm::chat::{
     ChatMessage, ChatProvider, ChatRole, FunctionTool, MessageType, ParameterProperty,
     ParametersSchema, Tool,
 };
+use time::macros::format_description;
 use tracing::{debug, error, info};
 
 fn commit_tool() -> Tool {
